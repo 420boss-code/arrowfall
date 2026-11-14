@@ -1,0 +1,25 @@
+{
+  "name": "arrowfall",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c green,cyan \"node server/index.js\" \"vite\"",
+    "build": "vite build",
+    "start": "node server/index.js",
+    "serve": "vite build && node server/index.js",
+    "preview": "vite preview",
+    "meshy": "node scripts/meshy-trees.mjs"
+  },
+  "dependencies": {
+    "three": "^0.187.0",
+    "ws": "^8.23.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.5",
+    "vite": "^7.1.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

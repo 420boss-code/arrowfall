@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Numberwell – Maths Solver &amp; Practice</title>
+  <meta name="description" content="Free step-by-step arithmetic solver, quick practice questions and times tables." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232a5bd7'/%3E%3Ctext x='32' y='45' font-size='38' text-anchor='middle' fill='white' font-family='Georgia,serif'%3E%E2%88%91%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+  <div id="site">
+    <header class="nw-top">
+      <a class="nw-logo" href="#">Σ Numberwell</a>
+      <nav><a href="#solver">Solver</a><a href="#practice">Practice</a><a href="#topics">Topics</a><a href="#tables">Times tables</a></nav>
+    </header>
+
+    <section class="nw-hero" id="solver">
+      <h1>Show your working.</h1>
+      <p>Type any sum and Numberwell solves it step by step, keeping fractions exact.</p>
+      <form id="nwSearch" autocomplete="off">
+        <input id="nwQuery" type="search" placeholder="e.g. 3/4 + 2/5  or  (12 − 4) × 3^2" aria-label="Type a sum" />
+        <button type="submit">Solve</button>
+      </form>
+      <div class="nw-examples">Try: <button data-q="3/4 + 2/5">3/4 + 2/5</button><button data-q="(12-4)*3^2">(12 − 4) × 3²</button><button data-q="15% * 240">15% × 240</button><button data-q="sqrt(144) - 7">√144 − 7</button></div>
+      <div id="nwResult" class="nw-result" hidden></div>
+    </section>
+
+    <section class="nw-card" id="practice">
+      <h2>Quick practice</h2>
+      <div class="nw-tabs" id="nwTopics">
+        <button data-topic="mental" class="on">Mental arithmetic</button><button data-topic="tables">Times tables</button><button data-topic="fractions">Fractions of amounts</button><button data-topic="percent">Percentages</button>
+      </div>
+      <div class="nw-q"><span id="nwQuestion"></span>
+        <form id="nwAnswerForm" autocomplete="off"><input id="nwAnswer" inputmode="decimal" aria-label="Your answer" /><button>Check</button></form>
+      </div>
+      <p id="nwFeedback" class="nw-feedback"></p>
+      <p class="nw-streak">Streak: <b id="nwStreak">0</b> · Best: <b id="nwBest">0</b></p>
+    </section>
+
+    <section class="nw-grid" id="topics">
+      <article><h3>Order of operations</h3><p><b>BIDMAS</b>: Brackets, Indices, Division and Multiplication (left to right), then Addition and Subtraction (left to right). So 2 + 3 × 4 = 2 + 12 = 14.</p></article>
+      <article><h3>Adding fractions</h3><p>Find a common denominator first. 1/3 + 1/4 = 4/12 + 3/12 = 7/12. Simplify by dividing top and bottom by their highest common factor.</p></article>
+      <article><h3>Percentages</h3><p>"Per cent" means "out of 100". To find 15% of 240, work out 10% (24) and 5% (12), then add: 36.</p></article>
+      <article><h3>Negative numbers</h3><p>Subtracting a negative is the same as adding: 5 − (−3) = 8. Multiplying two negatives gives a positive.</p></article>
+    </section>
+
+    <section class="nw-card" id="tables">
+      <h2>Times tables</h2>
+      <p>Hover over (or tap) a square to see the multiplication.</p>
+      <div id="nwTable" class="nw-table"></div>
+      <p id="nwTableSum" class="nw-tablesum">&nbsp;</p>
+    </section>
+
+    <footer class="nw-foot">Numberwell · free maths practice · no sign-up, no adverts</footer>
+  </div>
+
+  <div id="gameRoot" hidden>
+  <div id="app"></div>
+
+  <div id="hud" class="hidden">
+    <canvas id="minimap" width="180" height="180"></canvas>
+    <div id="teamCounts"><span class="blue">Blue <b id="blueCount">20</b></span> – <span class="red">Red <b id="redCount">20</b></span></div>
+    <div id="roundInfo"></div>
+    <div id="killfeed"></div>
+
+    <div id="crosshair">
+      <i class="ch t"></i><i class="ch b"></i><i class="ch l"></i><i class="ch r"></i><i class="dot"></i>
+    </div>
+    <div id="hitmarker">✕</div>
+    <div id="drawMeter"><div id="drawFill"></div></div>
+    <div id="drawLabel"></div>
+    <div id="prompt"></div>
+    <div id="centreMsg"></div>
+    <div id="damageVignette"></div>
+    <div id="dmgArrow"></div>
+
+    <div id="vitals">
+      <div class="bar"><label>HP</label><div class="track"><div id="hpFill" class="fill hp"></div></div><span id="hpText">100</span></div>
+      <div class="bar"><label>STA</label><div class="track"><div id="staFill" class="fill sta"></div></div></div>
+      <div id="stance"></div>
+    </div>
+    <div id="ammo"><span class="quiverIcon">➶</span> <b id="arrowCount">30</b></div>
+    <div id="viewHint">C – crouch · V – view · Tab – scores · Esc – pause</div>
+    <div id="perf" class="hidden"></div>
+  </div>
+
+  <div id="scoreboard" class="overlay hidden"></div>
+
+  <div id="startMenu" class="overlay menu">
+    <div class="panel">
+      <h1>Arrowfall</h1>
+      <p class="tag">Twenty archers a side. One clearing. Mind the trees.</p>
+      <div class="row"><label>Mode</label>
+        <select id="optMode"><option value="tdm">Team Deathmatch (best of five)</option><option value="kotf">King of the Field</option></select></div>
+      <div class="row"><label>Difficulty</label>
+        <select id="optDiff"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select></div>
+      <div class="row"><label>Friendly fire</label><input type="checkbox" id="optFF" /></div>
+      <div class="row"><label>Mouse sensitivity</label><input type="range" id="optSens" min="0.2" max="3" step="0.05" value="1" /><span id="sensVal">1.00</span></div>
+      <div class="row"><label>Volume</label><input type="range" id="optVol" min="0" max="1" step="0.05" value="0.8" /></div>
+      <div class="row"><label>Shadows</label><input type="checkbox" id="optShadows" checked /></div>
+      <div class="row"><label>Fullscreen (locks Ctrl+W)</label><input type="checkbox" id="optFull" /></div>
+      <button id="btnStart">Play offline</button>
+      <button id="btnOnline" class="online">Play online – public servers</button>
+      <p id="startNote" class="note"></p>
+      <div class="controls">
+        <b>WASD</b> move · <b>Shift</b> sprint · <b>C</b> toggle crouch (or hold <b>Ctrl</b>) · <b>Space</b> jump · <b>E</b> pick up arrows<br />
+        <b>Hold LMB</b> draw, release to loose · <b>RMB</b> zoom while drawing · <b>V</b> third person · <b>Tab</b> scoreboard · <b>F3</b> performance
+      </div>
+    </div>
+  </div>
+
+
+  <div id="serverMenu" class="overlay menu hidden">
+    <div class="panel wide">
+      <h2>Public servers</h2>
+      <div class="row"><label>Your name</label><input id="playerName" maxlength="16" placeholder="Archer" /></div>
+      <table class="servers">
+        <thead><tr><th>Server</th><th>Mode</th><th>Bots</th><th>Players</th><th></th></tr></thead>
+        <tbody id="serverList"></tbody>
+      </table>
+      <button id="btnRefresh" class="secondary small">Refresh list</button>
+      <h3>Create a server</h3>
+      <div class="row"><label>Name</label><input id="newName" maxlength="28" placeholder="My server" /></div>
+      <div class="row"><label>Mode</label><select id="newMode"><option value="tdm">Team Deathmatch</option><option value="kotf">King of the Field</option></select></div>
+      <div class="row"><label>Bot difficulty</label><select id="newDiff"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select></div>
+      <div class="row"><label>Friendly fire</label><input type="checkbox" id="newFF" /></div>
+      <div class="row"><label>List publicly</label><input type="checkbox" id="newPublic" checked /></div>
+      <button id="btnCreate">Create and join</button>
+      <div class="row joincode"><label>Private server code</label><input id="joinCode" maxlength="5" placeholder="ABCDE" /><button id="btnJoinCode" class="secondary small">Join</button></div>
+      <p id="netStatus" class="note"></p>
+      <button id="btnBack" class="secondary">Back</button>
+    </div>
+  </div>
+
+  <div id="pauseMenu" class="overlay menu hidden">
+    <div class="panel">
+      <h2 id="pauseTitle">Paused</h2>
+      <div class="row" id="pFFRow"><label>Friendly fire</label><input type="checkbox" id="pFF" /></div>
+      <div class="row"><label>Mouse sensitivity</label><input type="range" id="pSens" min="0.2" max="3" step="0.05" value="1" /></div>
+      <div class="row"><label>Volume</label><input type="range" id="pVol" min="0" max="1" step="0.05" value="0.8" /></div>
+      <button id="btnResume">Resume</button>
+      <button id="btnQuit" class="secondary">Quit to menu</button>
+    </div>
+  </div>
+
+  <div id="roundMenu" class="overlay menu hidden">
+    <div class="panel wide">
+      <h2 id="roundTitle"></h2>
+      <p id="roundSub"></p>
+      <div id="roundMvp"></div>
+      <div id="roundTable"></div>
+      <p id="roundWait" class="note"></p>
+      <button id="btnNext">Next round</button>
+      <button id="btnMenu" class="secondary">Main menu</button>
+    </div>
+  </div>
+
+  <div id="loading" class="overlay"><div class="panel"><h2>Growing the forest…</h2></div></div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

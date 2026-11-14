@@ -1,0 +1,15 @@
+# Render Blueprint: one free web service runs the game server, which also serves the site.
+# In Render: New → Blueprint → pick this repository.
+services:
+  - type: web
+    name: arrowfall
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: TRUST_PROXY        # Render sits behind a proxy: use the real client IP for rate limits
+        value: "1"

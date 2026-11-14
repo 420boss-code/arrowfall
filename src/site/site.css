@@ -1,0 +1,51 @@
+/* Numberwell – the maths page. Everything is scoped under #site. */
+body { margin: 0; background: #f6f7fb; }
+#site { --ink: #1d2433; --muted: #5b6475; --brand: #2a5bd7; --brand-2: #e9effd; --line: #dfe3ee; --good: #1f8a4c; --bad: #c2412d;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color: var(--ink); line-height: 1.55; max-width: 980px; margin: 0 auto; padding: 0 20px 40px; }
+#site a { color: var(--brand); text-decoration: none; }
+#site .nw-top { display: flex; align-items: center; justify-content: space-between; padding: 18px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; gap: 10px; }
+#site .nw-logo { font-weight: 700; font-size: 22px; color: var(--ink); letter-spacing: .2px; }
+#site nav a { margin-left: 20px; font-size: 15px; color: var(--muted); }
+#site nav a:hover { color: var(--brand); }
+#site .nw-hero { text-align: center; padding: 56px 0 32px; }
+#site .nw-hero h1 { font-family: Georgia, 'Times New Roman', serif; font-size: 44px; margin: 0 0 8px; font-weight: 600; }
+#site .nw-hero > p { color: var(--muted); margin: 0 0 26px; font-size: 17px; }
+#site form#nwSearch { display: flex; max-width: 640px; margin: 0 auto; box-shadow: 0 6px 24px rgba(30, 50, 110, .10); border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: #fff; }
+#site #nwQuery { flex: 1; border: 0; padding: 16px 18px; font-size: 18px; outline: none; min-width: 0; font-family: inherit; }
+#site form#nwSearch button { border: 0; background: var(--brand); color: #fff; font-size: 17px; padding: 0 26px; cursor: pointer; font-weight: 600; }
+#site form#nwSearch button:hover { filter: brightness(1.08); }
+#site .nw-examples { margin-top: 14px; color: var(--muted); font-size: 14px; }
+#site .nw-examples button { margin: 4px; background: var(--brand-2); border: 0; color: var(--brand); padding: 5px 11px; border-radius: 99px; cursor: pointer; font-size: 14px; }
+#site .nw-result { max-width: 640px; margin: 22px auto 0; text-align: left; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 22px; }
+#site .nw-answer { font-size: 30px; font-weight: 700; }
+#site .nw-answer small { font-size: 16px; color: var(--muted); font-weight: 500; }
+#site .nw-result h4 { margin: 12px 0 4px; color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .6px; }
+#site .nw-steps { margin: 0; padding-left: 22px; font-family: 'Cambria Math', Georgia, serif; font-size: 18px; }
+#site .nw-error { color: var(--bad); font-weight: 600; }
+#site .nw-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 24px 28px; margin: 26px 0; }
+#site h2 { margin: 0 0 12px; font-family: Georgia, serif; font-weight: 600; }
+#site .nw-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+#site .nw-tabs button { border: 1px solid var(--line); background: #fff; padding: 7px 14px; border-radius: 99px; cursor: pointer; font-size: 14px; color: var(--muted); }
+#site .nw-tabs button.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+#site .nw-q { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; font-size: 26px; font-family: 'Cambria Math', Georgia, serif; }
+#site #nwAnswerForm { display: flex; gap: 8px; }
+#site #nwAnswer { width: 120px; font-size: 20px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+#site #nwAnswerForm button { background: var(--brand); color: #fff; border: 0; border-radius: 8px; padding: 0 16px; font-size: 16px; cursor: pointer; }
+#site .nw-feedback { min-height: 24px; margin: 12px 0 0; font-weight: 600; }
+#site .nw-feedback.good { color: var(--good); } #site .nw-feedback.bad { color: var(--bad); }
+#site .nw-streak { color: var(--muted); margin: 6px 0 0; font-size: 14px; }
+#site .nw-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
+#site .nw-grid article { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+#site .nw-grid h3 { margin: 0 0 6px; font-size: 17px; }
+#site .nw-grid p { margin: 0; color: var(--muted); font-size: 14.5px; }
+#site .nw-table { display: grid; grid-template-columns: repeat(13, 1fr); gap: 3px; max-width: 620px; font-variant-numeric: tabular-nums; }
+#site .nw-table div { text-align: center; padding: 5px 0; font-size: 13px; background: #f3f5fa; border-radius: 4px; cursor: default; }
+#site .nw-table div.h { background: var(--brand-2); font-weight: 700; color: var(--brand); }
+#site .nw-table div.on { background: var(--brand); color: #fff; }
+#site .nw-tablesum { font-size: 20px; font-weight: 600; margin: 10px 0 0; }
+#site .nw-foot { text-align: center; color: var(--muted); font-size: 13px; padding-top: 24px; border-top: 1px solid var(--line); }
+@media (max-width: 600px) {
+  #site .nw-hero h1 { font-size: 32px; }
+  #site nav a { margin: 0 14px 0 0; }
+  #site .nw-table div { font-size: 11px; }
+}
