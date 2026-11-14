@@ -11,30 +11,38 @@
   <div id="site">
     <header class="nw-top">
       <a class="nw-logo" href="#">Σ Numberwell</a>
-      <nav><a href="#solver">Solver</a><a href="#practice">Practice</a><a href="#topics">Topics</a><a href="#tables">Times tables</a></nav>
+      <nav><a href="#solver">Solver</a><a href="#practice">Practice</a><a href="#resources">Resources</a><a href="#topics">Topics</a><a href="#tables">Times tables</a></nav>
     </header>
 
     <section class="nw-hero" id="solver">
       <h1>Show your working.</h1>
       <p>Type any sum and Numberwell solves it step by step, keeping fractions exact.</p>
       <form id="nwSearch" autocomplete="off">
-        <input id="nwQuery" type="search" placeholder="e.g. 3/4 + 2/5  or  (12 − 4) × 3^2" aria-label="Type a sum" />
+        <input id="nwQuery" type="search" placeholder="e.g. 3/4 + 2/5,  (12 − 4) × 3^2  or  sin(30)" aria-label="Type a sum" />
         <button type="submit">Solve</button>
       </form>
-      <div class="nw-examples">Try: <button data-q="3/4 + 2/5">3/4 + 2/5</button><button data-q="(12-4)*3^2">(12 − 4) × 3²</button><button data-q="15% * 240">15% × 240</button><button data-q="sqrt(144) - 7">√144 − 7</button></div>
+      <div class="nw-examples">Try: <button data-q="3/4 + 2/5">3/4 + 2/5</button><button data-q="(12-4)*3^2">(12 − 4) × 3²</button><button data-q="15% * 240">15% × 240</button><button data-q="sqrt(144) - 7">√144 − 7</button><button data-q="pi * 5^2">π × 5²</button><button data-q="sin(30) + cos(60)">sin 30 + cos 60</button></div>
       <div id="nwResult" class="nw-result" hidden></div>
     </section>
 
     <section class="nw-card" id="practice">
       <h2>Quick practice</h2>
       <div class="nw-tabs" id="nwTopics">
-        <button data-topic="mental" class="on">Mental arithmetic</button><button data-topic="tables">Times tables</button><button data-topic="fractions">Fractions of amounts</button><button data-topic="percent">Percentages</button>
+        <button data-topic="mental" class="on">Mental arithmetic</button><button data-topic="tables">Times tables</button><button data-topic="fractions">Fractions of amounts</button><button data-topic="percent">Percentages</button><button data-topic="angles">Angles</button><button data-topic="trig">Trig values</button>
       </div>
       <div class="nw-q"><span id="nwQuestion"></span>
         <form id="nwAnswerForm" autocomplete="off"><input id="nwAnswer" inputmode="decimal" aria-label="Your answer" /><button>Check</button></form>
       </div>
       <p id="nwFeedback" class="nw-feedback"></p>
       <p class="nw-streak">Streak: <b id="nwStreak">0</b> · Best: <b id="nwBest">0</b></p>
+    </section>
+
+    <section class="nw-card" id="resources">
+      <h2>Resources</h2>
+      <div class="nw-tabs" id="resTabs">
+        <button data-res="sets" class="on">Sets</button><button data-res="pi">Pi</button><button data-res="trig">Trigonometry</button><button data-res="angles">Angles</button>
+      </div>
+      <div id="resBody"></div>
     </section>
 
     <section class="nw-grid" id="topics">

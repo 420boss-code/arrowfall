@@ -64,3 +64,50 @@ body { margin: 0; background: #f6f7fb; }
 #site .nw-code { font: 700 28px/1.2 ui-monospace, Menlo, monospace !important; letter-spacing: 3px; color: var(--ink) !important; text-align: center; background: var(--brand-2); border-radius: 8px; padding: 12px; }
 #site #nwCodeGo { width: 100%; background: var(--brand); color: #fff; border: 0; border-radius: 8px; padding: 11px; font-size: 16px; cursor: pointer; font-weight: 600; margin-top: 8px; }
 #site #nwLoginForm .nw-link { display: block; margin-top: 6px; }
+
+/* resources */
+#site { --hl: rgba(42, 91, 215, .22); --bg-card: #fff; --sin: #c2412d; --cos: #2a5bd7; }
+#site .nw-res { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; }
+@media (max-width: 760px) { #site .nw-res { grid-template-columns: minmax(0, 1fr); } }
+#site .nw-res-notes p, #site .nw-res-notes li { font-size: 15px; color: var(--ink); }
+#site .nw-res-notes ul { padding-left: 20px; margin: 6px 0 12px; }
+#site .nw-res-tool h4 { margin: 4px 0 8px; font-size: 15px; }
+#site .nw-res-tool h4:not(:first-child) { margin-top: 22px; }
+#site .nw-sym { border-collapse: collapse; width: 100%; font-size: 14px; margin: 8px 0 14px; display: block; overflow-x: auto; }
+#site .nw-sym th, #site .nw-sym td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; }
+#site .nw-sym th { color: var(--muted); font-weight: 600; font-size: 13px; }
+#site .nw-exact td, #site .nw-exact th { text-align: center; font-variant-numeric: tabular-nums; }
+#site .nw-digits { font: 15px/1.6 ui-monospace, Menlo, monospace !important; word-break: break-word; background: var(--brand-2); padding: 8px 12px; border-radius: 8px; }
+#site .nw-big { font: 700 26px Georgia, serif !important; letter-spacing: 3px; color: var(--brand) !important; margin: 4px 0 !important; }
+#site .nw-hint { color: var(--muted) !important; font-size: 13px !important; margin: -4px 0 6px; }
+#site .nw-form { display: flex; flex-wrap: wrap; gap: 10px 14px; margin-bottom: 10px; }
+#site .nw-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); flex: 1 1 140px; }
+#site .nw-form input:not([type=range]) { font-size: 15px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; min-width: 0; }
+#site .nw-tri label { flex: 1 1 110px; }
+#site .nw-out { font-size: 14.5px; line-height: 1.7; background: #f3f5fa; border-radius: 8px; padding: 10px 12px; font-variant-numeric: tabular-nums; }
+#site .nw-out small { color: var(--muted); }
+#site .nw-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+#site .nw-chips button { border: 1px solid var(--line); background: #fff; padding: 5px 11px; border-radius: 99px; cursor: pointer; font-size: 14px; }
+#site .nw-chips button.on { background: var(--brand); color: #fff; border-color: var(--brand); }
+#site svg { width: 100%; max-width: 420px; display: block; margin: 0 auto 8px; touch-action: none; user-select: none; }
+#site #venn .vu { stroke: var(--muted); stroke-width: 1.5; }
+#site #venn .vc { fill: none; stroke: var(--ink); stroke-width: 1.8; }
+#site #venn .vt { font: 13px system-ui, sans-serif; text-anchor: middle; fill: var(--ink); }
+#site #venn .vl { font: 700 15px Georgia, serif; fill: var(--ink); }
+#site #piSvg .pc { fill: none; stroke: var(--ink); stroke-width: 1.5; }
+#site #piSvg .pi { fill: rgba(42, 91, 215, .12); stroke: var(--brand); stroke-width: 1.2; }
+#site #piSvg .po { fill: none; stroke: var(--sin); stroke-width: 1.2; }
+#site #unitSvg .ax { stroke: #b8bfd0; stroke-width: 0.01; }
+#site #unitSvg .uc { fill: none; stroke: var(--ink); stroke-width: 0.015; }
+#site #unitSvg .rad { stroke: var(--ink); stroke-width: 0.02; }
+#site #unitSvg .cosl { stroke: var(--cos); stroke-width: 0.035; }
+#site #unitSvg .sinl { stroke: var(--sin); stroke-width: 0.035; }
+#site #unitSvg .arc { fill: none; stroke: var(--muted); stroke-width: 0.012; }
+#site #unitSvg .pt, #site #angSvg .pt { fill: var(--brand); cursor: grab; }
+#site #unitSvg .ut { font: 0.11px system-ui, sans-serif; font-weight: 700; }
+#site #unitSvg .ut.cos { fill: var(--cos); } #site #unitSvg .ut.sin { fill: var(--sin); }
+#site .sinv { color: var(--sin); font-weight: 600; } #site .cosv { color: var(--cos); font-weight: 600; }
+#site #angSvg .arm { stroke: var(--ink); stroke-width: 3; stroke-linecap: round; }
+#site #angSvg .aarc { fill: rgba(42, 91, 215, .15); stroke: var(--brand); stroke-width: 2; }
+#site #angSvg .at { font: 700 15px system-ui, sans-serif; fill: var(--brand); text-anchor: middle; }
+#site code { background: var(--brand-2); padding: 1px 5px; border-radius: 4px; font-size: 13px; }

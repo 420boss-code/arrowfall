@@ -1,6 +1,7 @@
 // A small arithmetic solver that shows its working. Fractions stay exact (rational arithmetic);
 // square roots and fractional powers fall back to decimals.
-//   supports: + − × ÷ * / ^ ( ) %, unary minus, sqrt()/√, implicit multiplication like 2(3+4)
+//   supports: + − × ÷ * / ^ ( ) %, unary minus, sqrt()/√, π/pi, sin cos tan and their inverses
+//   (in degrees, as in school), implicit multiplication like 2(3+4) or 2π
 
 // ---------------------------------------------------------------- numbers
 const gcd = (a, b) => { a = Math.abs(a); b = Math.abs(b); while (b) [a, b] = [b, a % b]; return a || 1; };
@@ -48,6 +49,25 @@ function sqrtOf(a) {
   return { f: Math.sqrt(val(a)) };
 }
 
+// Trig in degrees. Results within 1e-12 of a whole or half are snapped, so sin(30) is exactly 0.5.
+function trig(name, x) {
+  const R = Math.PI / 180;
+  let r;
+  if (name === 'tan' && Math.abs(((x % 180) + 180) % 180 - 90) < 1e-9) throw new Error(`tan ${x}° is undefined (cos ${x}° = 0).`);
+  if ((name === 'asin' || name === 'acos') && Math.abs(x) > 1) throw new Error(`${name} only takes values from −1 to 1.`);
+  switch (name) {
+    case 'sin': r = Math.sin(x * R); break;
+    case 'cos': r = Math.cos(x * R); break;
+    case 'tan': r = Math.tan(x * R); break;
+    case 'asin': r = Math.asin(x) / R; break;
+    case 'acos': r = Math.acos(x) / R; break;
+    case 'atan': r = Math.atan(x) / R; break;
+  }
+  const snap = Math.round(r * 2) / 2;
+  if (Math.abs(r - snap) < 1e-12) r = snap;
+  return Number.isInteger(r * 2) && Math.abs(r) < 1e6 ? frac(r * 2, 2) : { f: r };
+}
+
 export function formatNum(x) {
   if ('f' in x) {
     const r = Math.round(x.f * 1e10) / 1e10;
@@ -58,7 +78,7 @@ export function formatNum(x) {
 
 // ---------------------------------------------------------------- parsing
 function tokenise(src) {
-  const s = src.replace(/[×xX]/g, '*').replace(/÷/g, '/').replace(/[−–]/g, '-').replace(/√/g, 'sqrt').replace(/²/g, '^2').replace(/³/g, '^3').replace(/\s+/g, '').replace(/=$/, '');
+  const s = src.replace(/[×xX]/g, '*').replace(/÷/g, '/').replace(/[−–]/g, '-').replace(/√/g, 'sqrt').replace(/²/g, '^2').replace(/³/g, '^3').replace(/°/g, '').replace(/\s+/g, '').toLowerCase().replace(/=$/, '');
   if (!s) throw new Error('Type a sum to solve.');
   const out = [];
   let i = 0;
@@ -67,6 +87,10 @@ function tokenise(src) {
     const num = /^(\d+\.?\d*|\.\d+)/.exec(s.slice(i));
     if (num) { out.push({ t: 'num', v: num[1] }); i += num[1].length; continue; }
     if (s.startsWith('sqrt', i)) { out.push({ t: 'sqrt' }); i += 4; continue; }
+    const fn = ['asin', 'acos', 'atan', 'sin', 'cos', 'tan'].find((f) => s.startsWith(f, i));
+    if (fn) { out.push({ t: 'fn', name: fn }); i += fn.length; continue; }
+    if (s.startsWith('pi', i)) { out.push({ t: 'pi' }); i += 2; continue; }
+    if (c === 'π') { out.push({ t: 'pi' }); i++; continue; }
     if ('+-*/^()%'.includes(c)) { out.push({ t: c }); i++; continue; }
     throw new Error(`Numberwell doesn't understand "${c}" yet.`);
   }
@@ -74,7 +98,7 @@ function tokenise(src) {
   const res = [];
   for (let k = 0; k < out.length; k++) {
     const prev = res[res.length - 1], cur = out[k];
-    if (prev && (prev.t === 'num' || prev.t === ')' || prev.t === '%') && (cur.t === '(' || cur.t === 'sqrt' || (cur.t === 'num' && prev.t !== 'num'))) res.push({ t: '*' });
+    if (prev && (prev.t === 'num' || prev.t === ')' || prev.t === '%' || prev.t === 'pi') && (cur.t === '(' || cur.t === 'sqrt' || cur.t === 'fn' || cur.t === 'pi' || (cur.t === 'num' && prev.t !== 'num'))) res.push({ t: '*' });
     res.push(cur);
   }
   return res;
@@ -115,6 +139,8 @@ function parse(tokens) {
     if (t.t === 'num') { p++; return { k: 'num', v: fromDecimal(t.v) }; }
     if (t.t === '(') { p++; const e = expr(); eat(')'); return { k: 'par', a: e }; }
     if (t.t === 'sqrt') { p++; return { k: 'sqrt', a: primary() }; }
+    if (t.t === 'fn') { p++; return { k: 'fn', name: t.name, a: primary() }; }
+    if (t.t === 'pi') { p++; return { k: 'pi' }; }
     throw new Error('Check your brackets and operators.');
   }
   const tree = expr();
@@ -131,6 +157,8 @@ function show(n) {
     case 'neg': return `−${show(n.a)}`;
     case 'pct': return `${show(n.a)}%`;
     case 'sqrt': return `√${n.a.k === 'par' || n.a.k === 'num' ? show(n.a) : `(${show(n.a)})`}`;
+    case 'pi': return 'π';
+    case 'fn': { const inner = n.a.k === 'par' ? n.a.a : n.a; return `${n.name}(${inner.k === 'num' ? formatNum(inner.v) : show(inner)})`; }
     case 'bin': return `${show(n.a)}${SYM[n.op]}${show(n.b)}`;
   }
   return '';
@@ -153,6 +181,8 @@ function reduceOnce(n) {
     case 'neg': return { k: 'num', v: OPS['*'](frac(-1), n.a.v) };
     case 'pct': return { k: 'num', v: OPS['/'](n.a.v, frac(100)) };
     case 'sqrt': return { k: 'num', v: sqrtOf(n.a.v) };
+    case 'pi': return { k: 'num', v: { f: Math.PI } };
+    case 'fn': return { k: 'num', v: trig(n.name, val(n.a.v)) };
     case 'bin': return { k: 'num', v: OPS[n.op](n.a.v, n.b.v) };
   }
   return null;

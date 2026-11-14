@@ -1,6 +1,7 @@
 // Numberwell: a working maths solver and practice page. Searching "1+1" opens Arrowfall.
 import './site/site.css';
 import { solve } from './site/solver.js';
+import { mountResources } from './site/resources.js';
 import { escapeHtml } from './core/utils.js';
 
 const $ = (id) => document.getElementById(id);
@@ -137,6 +138,16 @@ const GEN = {
     const d = pick([2, 3, 4, 5, 8, 10]), n = rnd(1, d - 1), whole = d * rnd(2, 15);
     return [`${n}/${d} of ${whole}`, (whole / d) * n];
   },
+  angles() {
+    const kind = pick(['line', 'triangle', 'point']);
+    if (kind === 'line') { const a = rnd(15, 165); return [`Angles on a straight line: ${a}° and x°. x`, 180 - a]; }
+    if (kind === 'triangle') { const a = rnd(20, 100), b = rnd(20, 160 - a); return [`A triangle has angles ${a}°, ${b}° and x°. x`, 180 - a - b]; }
+    const a = rnd(60, 150), b = rnd(40, 300 - a - 10); return [`Around a point: ${a}°, ${b}° and x°. x`, 360 - a - b];
+  },
+  trig() {
+    const [q, ans] = pick([['sin 30°', 0.5], ['cos 60°', 0.5], ['tan 45°', 1], ['sin 90°', 1], ['cos 0°', 1], ['sin 0°', 0], ['cos 90°', 0], ['tan 0°', 0], ['sin 150°', 0.5], ['cos 180°', -1]]);
+    return [q, ans];
+  },
   percent() {
     const p = pick([5, 10, 15, 20, 25, 30, 40, 50, 75]), x = pick([20, 40, 60, 80, 120, 160, 200, 240, 360, 400]);
     return [`${p}% of ${x}`, (p * x) / 100];
@@ -179,6 +190,7 @@ $('nwAnswerForm').addEventListener('submit', (e) => {
   nextQuestion();
 });
 nextQuestion();
+mountResources();
 
 // ---------------------------------------------------------------- times tables grid
 const grid = $('nwTable');
