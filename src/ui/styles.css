@@ -84,3 +84,25 @@ table.servers td, table.servers th { text-align: left; }
 #drawLabel { position: absolute; left: 50%; top: calc(50% + 56px); transform: translateX(-50%); font-size: 12px; opacity: 0; transition: opacity .15s; color: #e8e2cf; }
 #drawMeter.on + #drawLabel { opacity: .9; }
 #drawFill.full { box-shadow: 0 0 8px #bfe6ff; background: linear-gradient(90deg, #cfeaff, #ffffff); }
+
+/* health */
+#worldOverlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+.hpTrack { position: relative; }
+.hpTrack .fill, .hpTrack .chip { position: absolute; left: 0; top: 0; }
+.chip { height: 100%; width: 100%; background: #f3e6c8; transition: width .45s ease .4s; }
+.fill.hp { transition: width .08s; }
+.hpTrack::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 calc(25% - 1px), rgba(0,0,0,.45) calc(25% - 1px) 25%); pointer-events: none; }
+.fill.hp.regen { animation: regenPulse 1.2s ease-in-out infinite; }
+@keyframes regenPulse { 50% { filter: brightness(1.35) hue-rotate(60deg); } }
+#bandagePrompt { font-size: 12px; margin-top: 6px; opacity: .85; min-height: 16px; color: #ffd0d8; }
+#bandageBar { position: absolute; left: 50%; top: calc(50% + 90px); transform: translateX(-50%); text-align: center; font-size: 13px; display: none; }
+#bandageBar.on { display: block; }
+#bandageBar div { width: 160px; height: 6px; background: rgba(0,0,0,.5); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+#bandageBar i { display: block; height: 100%; width: 0; background: #ff8fa3; }
+#damageVignette.low { animation: lowPulse 0.9s ease-in-out infinite; }
+@keyframes lowPulse { 0%, 100% { box-shadow: inset 0 0 120px rgba(170, 0, 0, .25); } 50% { box-shadow: inset 0 0 200px rgba(200, 0, 0, .55); } }
+#deathRecap { position: absolute; left: 50%; top: 62%; transform: translateX(-50%); background: rgba(0,0,0,.55); border-radius: 8px; padding: 10px 16px; font-size: 14px; display: none; min-width: 260px; }
+#deathRecap.on { display: block; }
+#deathRecap h4 { margin: 0 0 6px; color: #ff9a85; font-family: Georgia, serif; font-size: 17px; }
+#deathRecap .row2 { display: flex; justify-content: space-between; gap: 18px; opacity: .9; }
+#deathRecap .crit { color: #bfe6ff; }

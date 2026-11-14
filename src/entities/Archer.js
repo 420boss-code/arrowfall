@@ -4,6 +4,7 @@ import { CONFIG } from '../config.js';
 import { clamp, lerp } from '../core/utils.js';
 
 const A = CONFIG.archer;
+const H = CONFIG.health;
 const B = CONFIG.bow;
 let NEXT_ID = 0;
 
@@ -31,7 +32,19 @@ export class Archer {
   reset(spawn) {
     this.pos.copy(spawn);
     this.vel.set(0, 0, 0);
-    this.hp = A.hp;
+    this.hp = H.max;
+    this.bandages = H.bandages;
+    this.bandaging = false;
+    this.bandageT = 0;
+    this.lastHurt = -99;       // game time of the last damage taken (regeneration waits after it)
+    this.regenerating = false;
+    this.damageLog = [];       // recent hits taken: { s: shooter idx, dmg, crit, t }
+    // animation state
+    this.hitReactT = 0; this.hitDirX = 0; this.hitDirZ = 0;
+    this.landT = 0;
+    this.pickupT = 0;
+    this.cheer = false;
+    this.deathStyle = 0;
     this.arrows = A.quiver;
     this.stamina = A.stamina;
     this.alive = true;
@@ -55,8 +68,8 @@ export class Archer {
   }
 
   get drawFrac() { return clamp(this.drawTime / B.fullDrawTime, 0, 1); }
-  get eyeHeight() { return this.crouching ? 1.1 : 1.62; }
-  get height() { return this.crouching ? A.crouchHeight : A.height; }
+  get eyeHeight() { return this.bandaging ? 1.0 : this.crouching ? 1.1 : 1.62; }
+  get height() { return this.crouching || this.bandaging ? A.crouchHeight : A.height; }
 
   headPos(out) {
     return out.set(this.pos.x, this.pos.y + this.height - 0.14, this.pos.z);
@@ -81,6 +94,7 @@ export class Archer {
   // Integrate movement against terrain, obstacles and map bounds.
   physics(dt, world) {
     if (this.hitFlash > 0) this.hitFlash -= dt;
+    this.tickAnim(dt);
     if (!this.alive) {
       // corpses settle onto the terrain
       this.pos.y = world.terrain.height(this.pos.x, this.pos.z);
@@ -88,6 +102,8 @@ export class Archer {
     }
     let target = this.crouching ? A.crouchSpeed : this.sprinting ? A.runSpeed : A.walkSpeed;
     if (this.drawing) target *= A.drawMoveFactor;
+    if (this.hp < H.limpBelow) target *= H.limpSpeed;       // wounded archers limp
+    if (this.bandaging) target *= 0.25;                     // kneeling: moving off interrupts it
     const mx = this.moveDir.x, mz = this.moveDir.y;
     const mlen = Math.min(1, Math.hypot(mx, mz));
     const accel = this.onGround ? 14 : 3;
@@ -109,6 +125,7 @@ export class Archer {
 
     const g = world.terrain.height(this.pos.x, this.pos.z);
     if (this.pos.y <= g) {
+      if (!this.onGround && this.vel.y < -4) this.landT = 0.28; // landing squash
       this.pos.y = g;
       this.vel.y = 0;
       this.onGround = true;
@@ -129,8 +146,16 @@ export class Archer {
     this.releaseTimer += dt;
   }
 
+  // Count down animation timers (all roles).
+  tickAnim(dt) {
+    if (this.hitReactT > 0) this.hitReactT -= dt;
+    if (this.landT > 0) this.landT -= dt;
+    if (this.pickupT > 0) this.pickupT -= dt;
+  }
+
   // Server-side tick for a human-controlled archer: position comes from the client.
   remoteTick(dt, world) {
+    this.tickAnim(dt);
     if (this.hitFlash > 0) this.hitFlash -= dt;
     this.releaseTimer += dt;
     if (!this.alive) this.pos.y = world.terrain.height(this.pos.x, this.pos.z);

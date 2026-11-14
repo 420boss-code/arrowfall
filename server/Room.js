@@ -71,6 +71,7 @@ export class Room {
       ep: g.archers.map((a) => a.epoch),
       roster: this._roster(),
       stats: this._stats(),
+      herbs: g.health.herbs.map((h) => (h.ready ? 1 : 0)),
     });
     this._broadcast({ t: 'roster', list: this._roster() });
     return null;
@@ -98,6 +99,7 @@ export class Room {
       case 's': this.game.applyRemoteState(a, m); break;
       case 'fire': this.game.applyRemoteFire(a, m); break;
       case 'pickup': if (a.alive) this.game.tryPickup(a); break;
+      case 'bandage': this.game.health.startBandage(a); break;
     }
   }
 

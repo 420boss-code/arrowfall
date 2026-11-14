@@ -73,6 +73,7 @@ export class Minimap {
       ctx.beginPath(); ctx.arc(0, 0, CONFIG.rules.kotfZoneRadius, 0, Math.PI * 2); ctx.stroke();
     }
     const dot = (x, z, col, r) => { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, z, r, 0, Math.PI * 2); ctx.fill(); };
+    for (const h of g.health.herbs) if (h.ready) dot(h.x, h.z, '#ff7a96', 1.3);
     const myTeam = me.team;
     for (const a of g.archers) {
       if (a === me) continue;

@@ -246,6 +246,45 @@ export class Audio {
     }
   }
 
+  // cloth rustle while winding a bandage
+  bandage() {
+    if (!this.enabled || this.ctx.state !== 'running') return;
+    const t0 = this.ctx.currentTime;
+    const out = this._out(0.3, 0);
+    for (let k = 0; k < 6; k++) {
+      const t = t0 + k * 0.45 + Math.random() * 0.1;
+      const n = this._noise(t, 0.25);
+      const bp = this.ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.7; bp.frequency.value = 2500 + Math.random() * 1500;
+      const g = this.ctx.createGain(); this._env(g, t, 0.06, 0.5, 0.18);
+      n.connect(bp).connect(g).connect(out);
+    }
+  }
+
+  // soft rising chime when healing from a herb
+  heal() {
+    if (!this.enabled || this.ctx.state !== 'running') return;
+    const t = this.ctx.currentTime;
+    const out = this._out(0.22, 0);
+    [523, 659, 784, 1047].forEach((f, k) => {
+      const o = this.ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+      const g = this.ctx.createGain(); this._env(g, t + k * 0.07, 0.01, 0.5, 0.45);
+      o.connect(g).connect(out); o.start(t + k * 0.07); o.stop(t + k * 0.07 + 0.6);
+    });
+  }
+
+  // low-health heartbeat: two muffled thumps
+  heartbeat() {
+    if (!this.enabled || this.ctx.state !== 'running') return;
+    const t = this.ctx.currentTime;
+    const out = this._out(0.55, 0);
+    for (const [dt, v] of [[0, 1], [0.16, 0.7]]) {
+      const o = this.ctx.createOscillator(); o.type = 'sine';
+      o.frequency.setValueAtTime(70, t + dt); o.frequency.exponentialRampToValueAtTime(40, t + dt + 0.12);
+      const g = this.ctx.createGain(); this._env(g, t + dt, 0.01, v, 0.14);
+      o.connect(g).connect(out); o.start(t + dt); o.stop(t + dt + 0.25);
+    }
+  }
+
   hitTick(headshot) {
     if (!this.enabled || this.ctx.state !== 'running') return;
     const t = this.ctx.currentTime;

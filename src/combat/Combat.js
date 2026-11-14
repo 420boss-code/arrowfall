@@ -100,14 +100,25 @@ export class Combat {
     const hl = Math.hypot(arrow.vel.x, arrow.vel.z) || 1;
     const kx = (arrow.vel.x / hl) * B.knockback, kz = (arrow.vel.z / hl) * B.knockback;
     if (!victim.remote) Combat.applyKnockback(victim, kx, kz);
+    this.game.health.onDamage(victim, dmg, shooter, arrow.crit);
+    Combat.hitReaction(victim, kx, kz);
     this.game.audio.impact('body', arrow.pos, victim.isPlayer);
     if (shooter && shooter.isPlayer) this.game.hud.hitMarker(arrow.crit, victim.hp <= 0);
     if (victim.isPlayer) this.game.hud.damageIndicator(shooter ? shooter.pos : null);
     if (victim.ai) victim.ai.onDamaged(shooter);
     const killed = victim.hp <= 0;
-    this.game.emit({ t: 'hit', v: victim.idx, s: shooter ? shooter.idx : -1, h: arrow.crit ? 1 : 0, k: killed ? 1 : 0, kb: [+kx.toFixed(2), +kz.toFixed(2)] });
+    this.game.emit({ t: 'hit', v: victim.idx, s: shooter ? shooter.idx : -1, h: arrow.crit ? 1 : 0, k: killed ? 1 : 0, kb: [+kx.toFixed(2), +kz.toFixed(2)], dm: Math.round(dmg) });
+    this.game.onHitFeedback(victim, shooter, Math.round(dmg), arrow.crit);
     if (killed) this.kill(victim, shooter, head);
     return true;
+  }
+
+  // Flinch in the direction the arrow was travelling.
+  static hitReaction(a, kx, kz) {
+    const l = Math.hypot(kx, kz) || 1;
+    a.hitReactT = 0.35;
+    a.hitDirX = kx / l;
+    a.hitDirZ = kz / l;
   }
 
   static applyKnockback(a, kx, kz) {
@@ -123,6 +134,8 @@ export class Combat {
     victim.alive = false;
     victim.drawing = false;
     victim.deathTime = 0;
+    victim.bandaging = false;
+    victim.deathStyle = Math.floor(Math.random() * 4); // back/forward fall, sideways, crumple, spin
     victim.stats.deaths++;
     // fall away from the arrow
     const d = victim.lastHitDir;
@@ -131,7 +144,7 @@ export class Combat {
       victim.deathDir = (d.x * fx + d.z * fz) < 0 ? 1 : -1;
     } else victim.deathDir = 1;
     if (killer && killer.team !== victim.team) killer.stats.kills++;
-    this.game.emit({ t: 'kill', v: victim.idx, s: killer ? killer.idx : -1, h: headshot ? 1 : 0, d: victim.deathDir });
+    this.game.emit({ t: 'kill', v: victim.idx, s: killer ? killer.idx : -1, h: headshot ? 1 : 0, d: victim.deathDir, st: victim.deathStyle });
     this.game.onKill(victim, killer, headshot);
   }
 }

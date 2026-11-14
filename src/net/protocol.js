@@ -2,14 +2,14 @@
 //
 // Snapshot layout: HEADER floats, then STRIDE floats per archer (in game.archers order).
 //   header: [1, serverTime, roundTime, zoneBlue, zoneRed, zoneCode, winsBlue, winsRed, round, roundOver]
-//   archer: [x, y, z, yaw, pitch, vx, vz, hp, arrows, flags, drawTime, epoch]
+//   archer: [x, y, z, yaw, pitch, vx, vz, hp, arrows, flags, drawTime, epoch, bandages]
 export const HEADER = 10;
-export const STRIDE = 12;
+export const STRIDE = 13;
 export const SNAP_RATE = 20;       // snapshots per second
 export const CLIENT_RATE = 30;     // client state messages per second
 
 export const FL = {
-  ALIVE: 1, CROUCH: 2, DRAW: 4, GROUND: 8, SPRINT: 16, DDIR: 32, SPOT_BLUE: 64, SPOT_RED: 128,
+  ALIVE: 1, CROUCH: 2, DRAW: 4, GROUND: 8, SPRINT: 16, DDIR: 32, SPOT_BLUE: 64, SPOT_RED: 128, BANDAGE: 256, REGEN: 512,
 };
 
 export const ZONE = { none: 0, blue: 1, red: 2, contested: 3 };
@@ -43,9 +43,12 @@ export function encodeSnapshot(game) {
     if (a.deathDir > 0) fl |= FL.DDIR;
     if (game.isSpotted(a, 'blue')) fl |= FL.SPOT_BLUE;
     if (game.isSpotted(a, 'red')) fl |= FL.SPOT_RED;
+    if (a.bandaging) fl |= FL.BANDAGE;
+    if (a.regenerating) fl |= FL.REGEN;
     f[b + 9] = fl;
     f[b + 10] = a.drawTime;
     f[b + 11] = a.epoch;
+    f[b + 12] = a.bandages;
   }
   return f;
 }

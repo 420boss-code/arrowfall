@@ -71,11 +71,14 @@
     <div id="drawLabel"></div>
     <div id="prompt"></div>
     <div id="centreMsg"></div>
+    <div id="bandageBar"><span>Bandaging…</span><div><i id="bandageFill"></i></div></div>
+    <div id="deathRecap"></div>
     <div id="damageVignette"></div>
     <div id="dmgArrow"></div>
 
     <div id="vitals">
-      <div class="bar"><label>HP</label><div class="track"><div id="hpFill" class="fill hp"></div></div><span id="hpText">100</span></div>
+      <div class="bar"><label>HP</label><div class="track hpTrack"><div id="hpChip" class="chip"></div><div id="hpFill" class="fill hp"></div></div><span id="hpText">100</span></div>
+      <div id="bandagePrompt"></div>
       <div class="bar"><label>STA</label><div class="track"><div id="staFill" class="fill sta"></div></div></div>
       <div id="stance"></div>
     </div>
@@ -103,7 +106,7 @@
       <button id="btnOnline" class="online">Play online – public servers</button>
       <p id="startNote" class="note"></p>
       <div class="controls">
-        <b>WASD</b> move · <b>Shift</b> sprint · <b>C</b> toggle crouch (or hold <b>Ctrl</b>) · <b>Space</b> jump · <b>E</b> pick up arrows<br />
+        <b>WASD</b> move · <b>Shift</b> sprint · <b>C</b> toggle crouch (or hold <b>Ctrl</b>) · <b>Space</b> jump · <b>E</b> pick up arrows · <b>Q</b> bandage<br />
         <b>Hold LMB</b> draw, release to loose · <b>RMB</b> zoom while drawing · <b>V</b> third person · <b>Tab</b> scoreboard · <b>F3</b> performance
       </div>
     </div>

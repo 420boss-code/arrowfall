@@ -55,6 +55,22 @@ export const CONFIG = {
     pickupRadius: 2.6,
   },
 
+  health: {
+    max: 100,
+    regenDelay: 6,           // seconds without taking damage before natural healing starts
+    regenRate: 3,            // HP per second while regenerating
+    bandages: 2,             // per life
+    bandageHeal: 35,         // HP restored over the bandaging time (stops if interrupted)
+    bandageTime: 3,          // seconds kneeling; moving, drawing, jumping or being hit interrupts
+    herbHeal: 40,            // healing herbs: walk over one to eat it
+    herbRegrow: 35,          // seconds for a herb to regrow
+    herbsField: 4,
+    herbsForest: 8,
+    limpBelow: 30,           // below this HP archers limp…
+    limpSpeed: 0.85,         // …at this fraction of normal speed
+    lowHpWarning: 30,        // heartbeat and red pulse below this
+  },
+
   // Minecraft-style bow (1 metre = 1 block, 20 game ticks per second).
   //   charge:   f = held / 1 s (capped at 1); power = (f² + 2f) / 3; below 0.1 power nothing is fired
   //   launch:   power × 60 m/s (3 blocks/tick), plus the shooter's own movement

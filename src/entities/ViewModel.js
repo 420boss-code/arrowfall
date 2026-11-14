@@ -95,6 +95,13 @@ export class ViewModel {
     this.drawBlend = lerp(this.drawBlend, a.drawing || releasing ? 1 : 0, k);
     this.sprintBlend = lerp(this.sprintBlend, a.sprinting && !a.drawing ? 1 : 0, clamp(dt * 6, 0, 1));
     const db = this.drawBlend, sb = this.sprintBlend;
+    // reload: after a shot the hand leaves frame over the shoulder for the next arrow, then returns
+    const reloading = !a.drawing && a.arrows > 0 && a.releaseTimer > 0.12 && a.releaseTimer < 0.75;
+    const rl = reloading ? Math.sin(((a.releaseTimer - 0.12) / 0.63) * Math.PI) : 0;
+    // bandaging and picking up
+    this.bandBlend = lerp(this.bandBlend || 0, a.bandaging ? 1 : 0, clamp(dt * 8, 0, 1));
+    const bb = this.bandBlend;
+    const pk = a.pickupT > 0 ? Math.sin((1 - a.pickupT / 0.6) * Math.PI) : 0;
     // walking bob and a little lag behind mouse movement
     const moving = clamp(a.speed / CONFIG.archer.runSpeed, 0, 1) * (a.onGround ? 1 : 0.3);
     const ph = a.animPhase;
@@ -125,7 +132,9 @@ export class ViewModel {
     this._segment(this.strTop, tipT, nock, 0.0045);
     this._segment(this.strBot, nock, tipB, 0.0045);
 
-    // left arm holds the bow
+    // left arm holds the bow; while bandaging the forearm comes across the body
+    if (bb > 0.01) { grip.lerp(new THREE.Vector3(-0.1, -0.36, -0.4), bb); this.bowRig.position.copy(grip); this.bowRig.rotation.z += bb * 0.6; this.bowRig.updateMatrix(); }
+    this.strTop.visible = this.strBot.visible = bb < 0.5;
     this.leftHand.position.copy(grip);
     this.leftHand.quaternion.copy(this.bowRig.quaternion);
     this.leftHand.scale.set(0.055, 0.1, 0.07);
@@ -138,13 +147,19 @@ export class ViewModel {
     const handDraw = nock.clone();
     if (releasing) handDraw.copy(FULL_NOCK).add(off).add(_b.set(0.05 * rec, 0.03 * rec, 0.06 * rec));
     const hand = handRest.clone().lerp(handDraw, db);
+    hand.lerp(new THREE.Vector3(0.38, 0.12, -0.12), rl * (1 - db * 0.6));
+    hand.lerp(new THREE.Vector3(0.08, -0.55, -0.42), pk);
+    if (bb > 0.01) {
+      const w = performance.now() / 1000 * 9;
+      hand.lerp(new THREE.Vector3(-0.02 + Math.cos(w) * 0.06, -0.3 + Math.sin(w) * 0.04, -0.36), bb);
+    }
     this.rightHand.position.copy(hand);
     this.rightHand.quaternion.identity();
     this.rightHand.scale.set(0.045, 0.05, 0.06);
     const elbowR = new THREE.Vector3(0.24, -0.4, -0.2).lerp(new THREE.Vector3(0.46, -0.44, -0.08), db * (0.3 + 0.7 * draw)).add(off);
     this._segment(this.rightFore, hand, elbowR, 0.05);
     this._segment(this.rightUpper, elbowR, new THREE.Vector3(0.34, -0.5, 0.25), 0.08);
-    this.rightHand.visible = this.rightFore.visible = this.rightUpper.visible = db > 0.05 || sb < 0.5;
+    this.rightHand.visible = this.rightFore.visible = this.rightUpper.visible = db > 0.05 || sb < 0.5 || bb > 0.05 || pk > 0.05;
 
     // nocked arrow points from the string towards the crosshair
     this.arrow.visible = a.drawing && a.arrows > 0;

@@ -84,6 +84,7 @@ Any host that runs a long-lived Node process with WebSockets will do, for exampl
 | Draw / loose | Hold / release left mouse |
 | Zoom while drawing | Right mouse |
 | Pick up arrows (ground, trees, fallen archers) | E |
+| Bandage (kneel to heal; moving, drawing or being hit interrupts) | Q |
 | Switch first person (default) / third person | V |
 | Scoreboard | Tab |
 | Performance overlay | F3 |
@@ -105,6 +106,19 @@ Any host that runs a long-lived Node process with WebSockets will do, for exampl
   - Drawing slows you to a fifth of walking speed, and the view narrows by up to 15% as you draw; right mouse still zooms further.
   - Stuck arrows can be picked up and despawn after a minute. Trunks and canopies block arrows and sight; bushes block sight only.
   - All of this is in `config.js` under `bow` and `arrows`. Setting `headshotMultiplier` to 2 or `swayMax` above 0 brings those features back.
+- **Health:** 100 HP.
+  - You start healing naturally (3 HP/s) after 6 seconds without being hit.
+  - Each life has 2 bandages: kneel for 3 seconds to heal 35. Moving, drawing, jumping or being hit stops it, keeping whatever was healed.
+  - Glowing red-berried healing herbs (12 around the map, shown in pink on the minimap) heal 40 when you walk over them while hurt, and regrow after 35 seconds.
+  - Below 30 HP you limp.
+  - The HUD shows a segmented health bar where lost health lingers briefly, a regeneration glow, floating damage numbers, health bars over teammates and enemies you've recently hit, and a heartbeat with a red pulse at low health. When you die, a recap shows who killed you and every hit.
+  - All values are in `config.js` under `health`.
+- **Animations** (procedural):
+  - Legs swing in the direction you're actually moving (strafing, walking backwards), feet shuffle when turning on the spot, and idle archers breathe and look around.
+  - After each shot archers reach over their shoulder to the quiver; they crouch to pick up arrows and kneel to bandage.
+  - Hits make them flinch, jumps end in a landing squash, wounded archers limp, and the winning team cheers at the end of a round.
+  - There are four deaths: falling backwards or forwards, toppling sideways, crumpling to the knees, or spinning down.
+  - In first person you see the reload and bandage gestures; the camera shakes when you're hit, dips on landing and pickups, and falls to the ground when you die.
 - **AI:** each bot runs a state machine (patrol → advance → take cover → engage → retreat, plus hold and scavenge). Bots move in squads of four. Cautious squads skirt round the field through the forest; bold ones regroup at the treeline and cross together at a sprint. In the forest they fight from behind trunks, drawing in cover and stepping out to shoot. They lead moving targets with a proper ballistic solution. Difficulty changes aim error, reaction time, aggression, how far ahead they lead and how often they think.
 - **Modes:** Team Deathmatch is best of five rounds, won by wiping out the other team (or having more survivors when the 8-minute round timer runs out). King of the Field puts a capture zone in the middle of the clearing: holding it uncontested scores points, fallen archers respawn after 6 s, and the first team to 120 wins.
 

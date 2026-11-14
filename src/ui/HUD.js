@@ -15,7 +15,7 @@ export class HUD {
       chL: document.querySelector('#crosshair .l'), chR: document.querySelector('#crosshair .r'),
       hit: $('hitmarker'), meter: $('drawMeter'), fill: $('drawFill'), prompt: $('prompt'), centre: $('centreMsg'),
       vignette: $('damageVignette'), dmgArrow: $('dmgArrow'), hp: $('hpFill'), hpText: $('hpText'), sta: $('staFill'),
-      ammo: $('ammo'), stance: $('stance'), drawLabel: $('drawLabel'), arrows: $('arrowCount'), perf: $('perf'), scoreboard: $('scoreboard'),
+      ammo: $('ammo'), stance: $('stance'), drawLabel: $('drawLabel'), hpChip: $('hpChip'), bandagePrompt: $('bandagePrompt'), bandageBar: $('bandageBar'), bandageFill: $('bandageFill'), recap: $('deathRecap'), arrows: $('arrowCount'), perf: $('perf'), scoreboard: $('scoreboard'),
     };
     this.cache = {};
     this.hitTimer = 0;
@@ -97,11 +97,27 @@ export class HUD {
       if (this.cache.drawCls !== cls) { this.cache.drawCls = cls; this.el.fill.className = cls; }
     }
     // vitals
-    this._set('hp', this.el.hp, 'width', `${Math.max(0, p.hp)}%`);
+    const H = CONFIG.health;
+    const hpPct = `${Math.max(0, (p.hp / H.max) * 100).toFixed(1)}%`;
+    this._set('hp', this.el.hp, 'width', hpPct);
+    this._set('hpChip', this.el.hpChip, 'width', hpPct); // trails behind by CSS, showing the chunk just lost
+    if (this.cache.regen !== p.regenerating) { this.cache.regen = p.regenerating; this.el.hp.classList.toggle('regen', !!p.regenerating); }
+    // bandages
+    const bp = !p.alive ? '' : p.bandaging ? '' : p.bandages > 0 ? (p.hp < H.max ? `Q – bandage (${p.bandages} left)` : `Bandages: ${p.bandages}`) : 'No bandages left';
+    this._set('bandP', this.el.bandagePrompt, 'text', bp);
+    this.el.bandageBar.classList.toggle('on', !!(p.alive && p.bandaging));
+    if (p.bandaging) this._set('bandF', this.el.bandageFill, 'width', `${Math.min(100, (p.bandageT / H.bandageTime) * 100).toFixed(0)}%`);
+    // low health: red pulse and a heartbeat
+    const low = p.alive && p.hp < H.lowHpWarning;
+    if (this.cache.low !== low) { this.cache.low = low; this.el.vignette.classList.toggle('low', low); }
+    if (low) {
+      this.beat = (this.beat ?? 0) - dt;
+      if (this.beat <= 0) { this.game.audio.heartbeat(); this.beat = 0.55 + (p.hp / H.lowHpWarning) * 0.5; }
+    }
     this._set('hpt', this.el.hpText, 'text', String(Math.max(0, Math.ceil(p.hp))));
     this._set('sta', this.el.sta, 'width', `${Math.round(p.stamina)}%`);
     this._set('arr', this.el.arrows, 'text', String(p.arrows));
-    const stance = !p.alive ? '' : p.crouching ? '▾ Crouched · quiet, steadier aim' : p.sprinting ? '» Sprinting' : '';
+    const stance = !p.alive ? '' : p.bandaging ? '✚ Bandaging – stay still' : p.hp < CONFIG.health.limpBelow ? '✚ Wounded – limping' : p.crouching ? '▾ Crouched · quiet' : p.sprinting ? '» Sprinting' : '';
     this._set('stance', this.el.stance, 'text', stance);
     if (this.cache.crouchCls !== p.crouching) { this.cache.crouchCls = p.crouching; this.el.stance.classList.toggle('crouch', p.crouching); }
     if (this.cache.empty !== (p.arrows === 0)) { this.cache.empty = p.arrows === 0; this.el.ammo.classList.toggle('empty', p.arrows === 0); }
@@ -147,6 +163,21 @@ export class HUD {
     }
     if (g.input.wasPressed('F3')) { this.showPerf = !this.showPerf; this.el.perf.classList.toggle('hidden', !this.showPerf); }
   }
+
+  deathRecap(victim, killer) {
+    const g = this.game;
+    const recent = victim.damageLog.filter((h) => g.time - h.t < 12);
+    const who = (i) => { const a = g.archers[i]; return a ? (a.isPlayer ? 'You' : escapeHtml(a.name)) : 'Unknown'; };
+    const total = recent.reduce((s, h) => s + h.dmg, 0);
+    this.el.recap.innerHTML = `<h4>${killer && killer !== victim ? `Killed by ${who(killer.idx)}` : 'You fell'}</h4>` +
+      recent.map((h) => `<div class="row2"><span>${who(h.s)}</span><span class="${h.crit ? 'crit' : ''}">${h.dmg}${h.crit ? ' critical' : ''}</span></div>`).join('') +
+      `<div class="row2" style="margin-top:6px;opacity:.7"><span>${recent.length} hit${recent.length === 1 ? '' : 's'}</span><span>${total} damage</span></div>`;
+    this.el.recap.classList.add('on');
+    clearTimeout(this.recapTimer);
+    this.recapTimer = setTimeout(() => this.el.recap.classList.remove('on'), 7000);
+  }
+
+  clearDeathRecap() { this.el.recap.classList.remove('on'); }
 
   updatePerf(text) { if (this.showPerf) this.el.perf.textContent = text; }
 

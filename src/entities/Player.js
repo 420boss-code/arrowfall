@@ -16,6 +16,7 @@ export class Player {
     this.camera = camera;
     this.firstPerson = CONFIG.camera.startFirstPerson;
     this.crouchToggle = false;
+    this.shake = 0;          // camera shake from being hit (0..1)
     this.sensitivity = 1;
     this.zoom = 0;
     this.swayT = 0;
@@ -64,6 +65,7 @@ export class Player {
       if (input.wasPressed('Space') && a.jump()) g.audio.footstep(g.surfaceAt(a.pos), 1.2, true);
 
       if (input.wasPressed('KeyE')) g.tryPickup(a);
+      if (input.wasPressed('KeyQ')) g.requestBandage();
 
       // bow
       if (input.lmb && !a.drawing && a.canDraw()) {
@@ -114,6 +116,21 @@ export class Player {
 
     let subject = a;
     let yaw = a.yaw, pitch = a.pitch;
+    // first person death: the view drops and rolls to the ground before spectating
+    if (!a.alive && this.firstPerson && a.deathTime < 1.8) {
+      const e = clamp(a.deathTime / 0.8, 0, 1), ease = 1 - Math.pow(1 - e, 3);
+      a.eyePos(_e);
+      const gy = this.game.terrain.height(a.pos.x, a.pos.z) + 0.25;
+      _e.y = lerp(_e.y, gy, ease);
+      const py = lerp(this.lookPitch, a.deathDir > 0 ? 0.9 : -0.3, ease);
+      const cp0 = Math.cos(py);
+      _f.set(-Math.sin(this.lookYaw) * cp0, Math.sin(py), -Math.cos(this.lookYaw) * cp0);
+      cam.position.copy(_e);
+      _t.copy(cam.position).add(_f);
+      cam.lookAt(_t);
+      cam.rotateZ(ease * 0.7 * (a.deathDir > 0 ? 1 : -1));
+      return;
+    }
     if (!a.alive) {
       // spectate: slowly orbit a living teammate (or our corpse)
       subject = this.spectating && this.spectating.alive ? this.spectating : a;
@@ -134,6 +151,9 @@ export class Player {
       const move = clamp(a.speed / CONFIG.archer.runSpeed, 0, 1) * (a.onGround ? 1 : 0) * (a.drawing ? 0.4 : 1) * (a.crouching ? 0.6 : 1);
       cam.position.y += Math.sin(a.animPhase * 2) * 0.028 * move;
       cam.position.addScaledVector(_r, Math.sin(a.animPhase) * 0.018 * move);
+      // landing dip and the duck when picking things up
+      if (a.landT > 0) cam.position.y -= (a.landT / 0.28) * 0.12;
+      if (a.pickupT > 0) cam.position.y -= Math.sin((1 - a.pickupT / 0.6) * Math.PI) * 0.35;
     } else {
       const off = CAM.thirdPersonOffset;
       const dist = !a.alive ? 5.5 : lerp(off.z, off.z * 0.7, this.zoom);
@@ -151,7 +171,15 @@ export class Player {
       const gh = this.game.terrain.height(cam.position.x, cam.position.z) + 0.3;
       if (cam.position.y < gh) cam.position.y = gh;
     }
+    // shake when hit
+    if (this.shake > 0 && a.alive) {
+      const k = this.shake * this.shake;
+      cam.position.x += (Math.random() - 0.5) * 0.09 * k;
+      cam.position.y += (Math.random() - 0.5) * 0.07 * k;
+      this.shake = Math.max(0, this.shake - dt * 2.2);
+    }
     _t.copy(cam.position).add(_f);
     cam.lookAt(_t);
+    if (this.shake > 0 && a.alive) cam.rotateZ((Math.random() - 0.5) * 0.05 * this.shake);
   }
 }

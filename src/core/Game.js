@@ -16,6 +16,8 @@ import { Player } from '../entities/Player.js';
 import { ViewModel } from '../entities/ViewModel.js';
 import { Projectiles } from '../combat/Projectiles.js';
 import { Combat } from '../combat/Combat.js';
+import { Health } from '../combat/Health.js';
+import { WorldOverlay } from '../ui/WorldOverlay.js';
 import { AIManager } from '../ai/AIManager.js';
 import { Audio } from '../audio/Audio.js';
 import { HUD } from '../ui/HUD.js';
@@ -88,6 +90,7 @@ export class Game {
     this.projectiles.onImpact = (kind, pos) => this.audio.impact(kind, pos);
     this.projectiles.onNearMiss = (pos) => this.audio.whoosh(pos, 1.1, 0.35);
     this.ai = new AIManager(this);
+    this.health = new Health(this, { visual: !headless });
 
     if (!headless) {
       this.audio = new Audio();
@@ -98,9 +101,10 @@ export class Game {
       this.projectiles.listener = this.player.archer;
       this.hud = new HUD(this);
       this.minimap = new Minimap(document.getElementById('minimap'), this);
+      this.overlay = new WorldOverlay(this);
       this.menus = new Menus(this);
     } else {
-      this.audio = this.input = this.hud = this.minimap = this.menus = NOOP;
+      this.audio = this.input = this.hud = this.minimap = this.menus = this.overlay = NOOP;
       this.player = null;
     }
     this._buildZone();
@@ -213,6 +217,8 @@ export class Game {
   }
 
   _beginRoundCommon() {
+    this.health.resetHerbs();
+    this.hud.clearDeathRecap();
     for (const a of this.archers) a.roundStart = { ...a.stats };
     this.roundTime = 0;
     this.roundOver = false;
@@ -275,10 +281,25 @@ export class Game {
     this.hud.killFeed(killer, victim, headshot);
     if (victim.isPlayer && this.player) {
       this.audio.stopDraw();
+      this.hud.deathRecap(victim, killer);
       this.player.spectating = this.teams[victim.team].find((a) => a.alive && a !== victim) || null;
       this.player.specYaw = victim.yaw;
     }
     if (this.mode === 'kotf') victim.respawnAt = this.time + R.kotfRespawnDelay;
+  }
+
+  // Damage numbers, enemy health bars and camera shake for whoever is watching.
+  onHitFeedback(victim, shooter, dmg, crit) {
+    if (!this.player) return;
+    if (shooter && shooter.isPlayer) { this.overlay.damageNumber(victim, dmg, crit); victim.lastHitByMe = this.time; }
+    if (victim.isPlayer) this.player.shake = Math.min(1, this.player.shake + 0.35 + dmg / 120);
+  }
+
+  requestBandage() {
+    const me = this.me;
+    if (!me || !me.alive) return;
+    if (this.role === 'client') this.net.send({ t: 'bandage' });
+    else this.health.startBandage(me);
   }
 
   aliveCount(team) {
@@ -325,6 +346,7 @@ export class Game {
     }
     archer.arrows += n;
     if (n > 0 && archer.isPlayer) this.audio.pickup();
+    if (n > 0) archer.pickupT = 0.6;
     if (n > 0) this.emit({ t: 'collect', i: archer.idx, p: vec3(archer.pos), n });
     return n;
   }
@@ -407,6 +429,7 @@ export class Game {
 
   _roundEndCommon(timeout) {
     this.roundOver = true;
+    for (const a of this.archers) a.cheer = !!this.roundWinner && a.alive && a.team === this.roundWinner;
     this.roundEndTimer = 3;
     const name = this.roundWinner === 'blue' ? 'Blue' : this.roundWinner === 'red' ? 'Red' : null;
     this.hud.centre(name ? `${name} ${this.matchOver ? 'wins the match' : 'take the round'}${timeout ? ' on time' : ''}` : 'Round drawn', 3);
@@ -509,6 +532,7 @@ export class Game {
     this._applyMatchInfo(w.match);
     this._applyRoster(w.roster);
     this._applyStats(w.stats);
+    if (w.herbs) w.herbs.forEach((r, i) => { if (this.health.herbs[i]) this.health.herbs[i].ready = !!r; });
     this.round = w.round;
     this.roundWins = w.wins;
     this.projectiles.clearAll();
@@ -582,6 +606,11 @@ export class Game {
       if (fl & FL.SPOT_RED) this.spottedBy.red[i] = now;
       if ((f[b + 11] | 0) !== a.epoch) continue; // a respawn event is on its way
       a.hp = f[b + 7];
+      a.bandages = f[b + 12];
+      a.regenerating = !!(fl & FL.REGEN);
+      const band = alive && !!(fl & FL.BANDAGE);
+      if (band && !a.bandaging) a.bandageT = 0;
+      a.bandaging = band;
       if (a === me) {
         if (now - this.lastLocalFire > 0.6 && now - (this.lastPickupReq || -99) > 0.6) a.arrows = f[b + 8];
         if (!alive && a.alive) this._applyDeath(a, fl & FL.DDIR ? 1 : -1);
@@ -633,8 +662,13 @@ export class Game {
         const v = this.archers[e.v], s = this.archers[e.s];
         if (!v) return;
         v.hitFlash = 0.15;
+        if (e.kb) Combat.hitReaction(v, e.kb[0], e.kb[1]);
         if (s === me) this.hud.hitMarker(!!e.h, !!e.k);
+        this.onHitFeedback(v, s || null, e.dm || 0, !!e.h);
         if (v === me) {
+          me.lastHurt = this.time;
+          me.damageLog.push({ s: e.s, dmg: e.dm || 0, crit: !!e.h, t: this.time });
+          if (me.damageLog.length > 8) me.damageLog.shift();
           this.hud.damageIndicator(s ? s.pos : null);
           if (e.kb) Combat.applyKnockback(me, e.kb[0], e.kb[1]); // our own movement is ours to push
         }
@@ -644,6 +678,8 @@ export class Game {
         const v = this.archers[e.v], s = this.archers[e.s] || null;
         if (!v) return;
         if (v.alive) this._applyDeath(v, e.d);
+        v.deathStyle = e.st || 0;
+        v.bandaging = false;
         this.onKill(v, s, !!e.h);
         break;
       }
@@ -659,7 +695,16 @@ export class Game {
       case 'collect': {
         const a = this.archers[e.i];
         const n = this.projectiles.collect({ pos: new THREE.Vector3(e.p[0], e.p[1], e.p[2]) }, A.pickupRadius, e.n);
+        if (a) a.pickupT = 0.6;
         if (a === me && e.n > 0) { this.audio.pickup(); this.lastPickupReq = -99; a.arrows = Math.min(A.maxArrows, a.arrows + e.n); }
+        break;
+      }
+      case 'herb': {
+        const h = this.health.herbs[e.h];
+        if (!h) return;
+        h.ready = !!e.a;
+        const a = this.archers[e.i];
+        if (a && !e.a) { a.pickupT = 0.6; if (a === me) this.audio.heal(); }
         break;
       }
       case 'match':
@@ -695,6 +740,8 @@ export class Game {
     for (const a of this.archers) {
       if (a === me) continue;
       if (a.hitFlash > 0) a.hitFlash -= dt;
+      a.tickAnim(dt);
+      if (a.bandaging) a.bandageT += dt;
       a.releaseTimer += dt;
       if (!a.alive) a.deathTime += dt;
       const n = a.net;
@@ -754,6 +801,7 @@ export class Game {
     }
     this.archerRenderer.update(dt, this.camera.position, false); // keeps body matrices for stuck arrows
     this.projectiles.update(dt);
+    if (!this.roundOver || this.mode === 'kotf') this.health.update(dt);
     this._expireT = (this._expireT || 0) + dt;
     if (this._expireT > 1) { this.projectiles.ageStuck(this._expireT); this.projectiles.expireOld(); this._expireT = 0; }
     if (!this.roundOver) this._rules(dt);
@@ -782,6 +830,7 @@ export class Game {
         }
       }
       this.projectiles.update(simDt);
+      if (!client && !this.roundOver) this.health.update(simDt);
       this._expireT = (this._expireT || 0) + simDt;
       if (this._expireT > 1) { this.projectiles.ageStuck(this._expireT); this.projectiles.expireOld(); this._expireT = 0; }
       this._footsteps();
@@ -807,7 +856,11 @@ export class Game {
       const cp = this.camera.position;
       this.terrain.updateAtmosphere(cp, dt);
       this.forest.updateLOD(cp);
-      this.archerRenderer.update(dt, cp, this.player.firstPerson && this.me.alive && this.state === 'playing');
+      // first person hides your own body (also while the death camera falls through where it was)
+      const fpHide = this.player.firstPerson && (this.me.alive || this.me.deathTime < 1.8) && this.state === 'playing';
+      this.archerRenderer.update(dt, cp, fpHide);
+      this.health.animate(dt);
+      this.overlay.update(dt);
       this.audio.setListener(cp, this.state === 'playing' && this.me.alive ? this.me.yaw : this.player.specYaw, this.terrain.forestBlend);
       this.audio.update(dt);
       if (this.viewModel) this.viewModel.update(dt, this.camera, this.input);

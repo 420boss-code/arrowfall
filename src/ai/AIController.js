@@ -41,7 +41,7 @@ function solveLaunch(x, y, v) {
 }
 
 export const S = {
-  PATROL: 'patrol', ADVANCE: 'advance', COVER: 'cover', ENGAGE: 'engage', RETREAT: 'retreat', SCAVENGE: 'scavenge', HOLD: 'hold',
+  PATROL: 'patrol', ADVANCE: 'advance', COVER: 'cover', ENGAGE: 'engage', RETREAT: 'retreat', SCAVENGE: 'scavenge', HOLD: 'hold', HEAL: 'heal',
 };
 
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _e = new THREE.Vector3(), _t = new THREE.Vector3();
@@ -206,6 +206,21 @@ export class AIController {
       else if (this.state !== S.RETREAT) this.setState(S.RETREAT);
     }
 
+    // healing: kneel to bandage when nobody is in sight, or detour to a herb when hurt
+    const health = this.game.health;
+    if (a.bandaging) {
+      if (seen) health.stopBandage(a);
+      else { this.moveTarget.copy(a.pos); return; }
+    }
+    const quiet = !seen && now - this.lastSeen > 2.5;
+    if (quiet && a.hp < 55 && a.bandages > 0 && a.onGround && this.state !== S.SCAVENGE) {
+      if (health.startBandage(a)) { this.moveTarget.copy(a.pos); return; }
+    }
+    if (quiet && a.hp < 65 && this.state !== S.HEAL && this.state !== S.SCAVENGE) {
+      const herb = health.nearestHerb(a.pos, 35);
+      if (herb) { this.herb = herb; this.setState(S.HEAL); }
+    }
+
     // King of the Field: don't sit at the treeline while the enemy holds the zone
     if (this.game.mode === 'kotf' && a.arrows > 0 && !lowHp) {
       const zr = CONFIG.rules.kotfZoneRadius - 1.5;
@@ -294,6 +309,15 @@ export class AIController {
         this.moveTarget.copy(home);
         this.wantSprint = a.stamina > 20;
         if (this.stateTime > 14 && a.arrows > 0) this.setState(seen ? S.ENGAGE : S.HOLD);
+        break;
+      }
+      case S.HEAL: {
+        if (seen) { this._enterCoverOrEngage(); break; }
+        const h = this.herb;
+        if (!h || !h.ready || a.hp >= 92 || this.stateTime > 20) { this.herb = null; this.setState(S.ADVANCE); break; }
+        this.moveTarget.set(h.x, 0, h.z);
+        this.wantSprint = a.stamina > 15;
+        a.crouching = false;
         break;
       }
       case S.SCAVENGE: {
@@ -409,6 +433,12 @@ export class AIController {
     this.stateTime += dt;
     this.phaseTime += dt;
     if (this.reaction > 0) this.reaction -= dt;
+    if (a.bandaging) {
+      a.moveDir.set(0, 0);
+      a.sprinting = false;
+      if (a.drawing) { a.drawing = false; a.drawTime = 0; }
+      return;
+    }
     const engaging = (this.state === S.ENGAGE || this.state === S.COVER || this.state === S.RETREAT ||
       (this.state === S.ADVANCE && this.game.mode === 'kotf' && this.targetVisible)) && this.target && this.target.alive;
 
