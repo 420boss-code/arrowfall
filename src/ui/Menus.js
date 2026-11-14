@@ -46,8 +46,8 @@ export class Menus {
     $('btnPauseAdmin').addEventListener('click', () => this.showAdmin('pauseMenu'));
     $('admBack').addEventListener('click', () => this.hideAdmin());
     $('admRefresh').addEventListener('click', () => this.refreshAdmin());
-    $('admEntryBtn').addEventListener('click', () => this.changePassword('entry', 'admEntry'));
     $('admAdminBtn').addEventListener('click', () => this.changePassword('admin', 'admAdmin'));
+    $('admCodeBtn').addEventListener('click', () => this.createCode());
     $('admFAdd').addEventListener('click', () => this.addFaction());
     $('btnMenu').addEventListener('click', () => game.quitToMenu());
   }
@@ -105,17 +105,26 @@ export class Menus {
       const item = (inner) => `<div class="it">${inner}</div>`;
       $('admFactions').innerHTML = st.factions.length ? st.factions.map((f) => item(
         `<span class="swatch" style="background:${escapeHtml(f.colour)}"></span><span class="grow"><b>[${escapeHtml(f.tag)}]</b> ${escapeHtml(f.name)}</span><button class="secondary" data-del="${escapeHtml(f.id)}">Delete</button>`)).join('') : '<div class="empty">No factions yet.</div>';
+      const num = (n) => `#${String(n).padStart(3, '0')}`;
       $('admPlayers').innerHTML = st.players.length ? st.players.map((p) => item(
-        `<span class="grow">${escapeHtml(p.name)}${p.faction ? ` <small>[${escapeHtml(p.faction)}]</small>` : ''} <small>· ${escapeHtml(p.room)} · ${escapeHtml(p.ip)}</small></span><button class="secondary" data-kick="${escapeHtml(p.key)}">Kick</button><button data-ban="${escapeHtml(p.key)}">Ban</button>`)).join('') : '<div class="empty">Nobody is in an online game right now.</div>';
+        `<span class="grow">${escapeHtml(p.name)}${p.faction ? ` <small>[${escapeHtml(p.faction)}]</small>` : ''} <small>· ${p.player ? num(p.player) : 'admin'} · ${escapeHtml(p.room)}</small></span><button class="secondary" data-kick="${escapeHtml(p.key)}">Kick</button>${p.player ? `<button data-ban="${escapeHtml(p.key)}">Ban</button>` : ''}`)).join('') : '<div class="empty">Nobody is in an online game right now.</div>';
+      if (!$('admNum').value && st.nextNumber) $('admNum').value = st.nextNumber;
+      $('admCodes').innerHTML = st.codes.length ? st.codes.map((c) => item(
+        `<span class="grow">${num(c.player)} ${escapeHtml(c.name || '')} <code>${c.code.slice(0, 3)} ${c.code.slice(3)}</code>${c.revoked ? ` <small class="revoked">${c.permanent ? 'blocked (REVOKED_PLAYERS)' : 'revoked'}</small>` : ''}</span>` +
+        (c.permanent ? '' : c.revoked ? `<button class="secondary" data-restore="${c.player}">Restore</button>` : `<button data-revoke="${c.player}">Revoke</button>`))).join('') : '<div class="empty">No player codes created yet.</div>';
       $('admBans').innerHTML = st.bans.length ? st.bans.map((b) => item(
         `<span class="grow">${escapeHtml(b.name)} <small>· ${escapeHtml(b.ip)} · ${escapeHtml(b.at.slice(0, 10))}</small></span><button class="secondary" data-unban="${escapeHtml(b.id)}">Unban</button>`)).join('') : '<div class="empty">No bans.</div>';
       const act = (attr, path, label) => $('adminMenu').querySelectorAll(`[${attr}]`).forEach((btn) => btn.addEventListener('click', async () => {
-        if (attr === 'data-ban' && !confirm('Ban this player? Everyone on their internet address will be blocked.')) return;
         try { await this._admin(path, attr === 'data-del' || attr === 'data-unban' ? { id: btn.getAttribute(attr) } : { key: btn.getAttribute(attr) }); this.admStatus(label); this.refreshAdmin(); } catch (e) { this.admStatus(e.message, true); }
       }));
+      const actNum = (attr, path, label) => $('adminMenu').querySelectorAll(`[${attr}]`).forEach((btn) => btn.addEventListener('click', async () => {
+        try { await this._admin(path, { player: Number(btn.getAttribute(attr)) }); this.admStatus(label); this.refreshAdmin(); } catch (e) { this.admStatus(e.message, true); }
+      }));
+      actNum('data-revoke', '/api/admin/revoke', 'Code revoked – that player has been logged out.');
+      actNum('data-restore', '/api/admin/restore', 'Code restored.');
       act('data-del', '/api/admin/faction/delete', 'Faction deleted.');
       act('data-kick', '/api/admin/kick', 'Player kicked.');
-      act('data-ban', '/api/admin/ban', 'Player banned.');
+      act('data-ban', '/api/admin/ban', 'Player banned: their code is revoked (Restore under Player codes to undo).');
       act('data-unban', '/api/admin/unban', 'Ban lifted.');
     } catch (e) { this.admStatus(e.message, true); }
   }
@@ -126,6 +135,17 @@ export class Menus {
       const r = await this._admin('/api/admin/password', { which, password: pw });
       $(inputId).value = '';
       this.admStatus(`${which === 'entry' ? 'Entry' : 'Admin'} password changed. ${r.note}`);
+    } catch (e) { this.admStatus(e.message, true); }
+  }
+
+  async createCode() {
+    try {
+      const r = await this._admin('/api/admin/code', { player: Number($('admNum').value), name: $('admNumName').value });
+      const box = $('admNewCode');
+      box.hidden = false;
+      box.innerHTML = `Player #${String(r.player).padStart(3, '0')}${r.name ? ` (${escapeHtml(r.name)})` : ''}: <b>${r.code.slice(0, 3)} ${r.code.slice(3)}</b>${r.revoked ? ' <span class="revoked">– currently revoked</span>' : ''}<br><small>Give this code to that player. The same number always gives the same code.</small>`;
+      $('admNum').value = ''; $('admNumName').value = '';
+      this.refreshAdmin();
     } catch (e) { this.admStatus(e.message, true); }
   }
 

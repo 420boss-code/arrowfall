@@ -43,25 +43,30 @@ Options: `--only pine,broadleaf,bush`, `--variants 2` (default: 2 of each kind, 
 
 Thousands of trees are drawn at once, so these limits matter; they're in `config.js` under `forest`. Check Meshy's terms for how you may use and must credit the models.
 
-## Passwords, admin panel and factions
+## Player codes, admin panel and factions
 
-The maths page is public. Typing **1+1** now asks for an access code, and the server sends nothing else (the game itself, the tree models, the server list and multiplayer) without a login.
+The maths page is public. Typing **1+1** asks for a code, and the server sends nothing else (the game itself, the tree models, the server list and multiplayer) without a login.
 
-- **Entry password:** lets you play, and nothing more.
-- **Admin password:** lets you play and adds an **Admin panel** button to the start and pause menus. From there admins can:
-  - **Change passwords:** changing one logs out everyone using the old one, except the admin who made the change.
-  - **Create and delete factions:** each has a name, a tag of up to 5 letters, and a colour. Players pick a faction when joining online, the tag appears before their name (`[WOLF] Gertie`), and members are put on the same team.
-  - **Kick or ban players who are online:** a ban blocks that person's internet address, which can also block others sharing the same connection, such as a household or school. Bans can be lifted again.
+- **Players** each have their own 8-digit **player code**: 3 digits of player number (001–999) and a 5-digit check, e.g. `007 70397`. Codes are calculated from the secret `CODE_SECRET` rather than stored, so they keep working on hosts whose disk is wiped on restart. The same number always gives the same code; changing `CODE_SECRET` changes every code.
+- **The admin** logs in with the admin password: a 5-letter word and 2 digits, e.g. `otter58`. This adds an **Admin panel** to the start and pause menus, where the admin can:
+  - **Create player codes:** pick a number (the next free one is suggested) and an optional name, then hand the code to that player.
+  - **Revoke or restore a code:** revoking logs that player out at once.
+  - **See who's online,** with their player numbers, and kick or ban them. A ban revokes only that player's code.
+  - **Change the admin password** (until the next restart; set `ADMIN_PASSWORD` to change it for good).
+  - **Create and delete factions:** each has a name, a tag of up to 5 letters, and a colour. The tag appears before members' names and members are put on the same team.
 
-**How it's secured:**
+**Security:** passwords are stored only as salted scrypt hashes, logins use a 14-day HttpOnly cookie, and after 5 wrong attempts an address is locked out for 1 minute, growing to 10 minutes with repeated failures. The admin password format is short, so the lockout matters: keep it private.
 
-- Passwords are stored only as salted scrypt hashes.
-- Logins use an HttpOnly cookie that lasts 14 days.
-- After 5 wrong guesses an address is locked out for 1 minute, growing to 10 minutes with repeated failures.
+**Settings (environment variables):**
 
-**Setting the passwords.** Set the `ENTRY_PASSWORD` and `ADMIN_PASSWORD` environment variables; on Render the Blueprint asks for both when you create the service. Without them the server makes up random passwords and prints them once in its log. Changes made in the admin panel (passwords, factions, bans) are saved to `data/auth.json`.
+| Variable | What it does |
+| --- | --- |
+| `ADMIN_PASSWORD` | The admin password (5 letters + 2 digits) |
+| `CODE_SECRET` | Long random secret that player codes are calculated from. Keep it private. |
+| `REVOKED_PLAYERS` | Optional: player numbers blocked for good, e.g. `7,12` |
+| `DATA_DIR` | Optional: where admin-panel changes are saved |
 
-**Note for Render's free tier:** its disk is wiped whenever the service restarts or redeploys. When that happens, the passwords go back to the environment variables and factions and bans are lost. To keep them, attach a persistent disk (a paid feature) and point `DATA_DIR` at it.
+Changes made in the admin panel (names, revocations, factions, admin password) are saved to `data/auth.json`, which Render's free tier wipes on every restart. Player codes themselves are never lost. For a block that must survive restarts, add the number to `REVOKED_PLAYERS`.
 
 ## Online play
 

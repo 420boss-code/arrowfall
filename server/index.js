@@ -124,7 +124,7 @@ async function bodyJson(req) {
 function onlinePlayers() {
   const out = [];
   for (const r of rooms.values()) {
-    for (const [ws, c] of r.clients) out.push({ key: `${r.id}:${c.idx}`, room: r.name, roomId: r.id, name: c.name, faction: c.faction ? c.faction.tag : null, ip: maskIp(ws.ip), ws });
+    for (const [ws, c] of r.clients) out.push({ key: `${r.id}:${c.idx}`, room: r.name, roomId: r.id, name: c.name, faction: c.faction ? c.faction.tag : null, player: ws.player || null, ip: maskIp(ws.ip), ws });
   }
   return out;
 }
@@ -134,10 +134,10 @@ function findPlayer(key) { return onlinePlayers().find((p) => p.key === key) || 
 async function api(req, res, p, ip, sess) {
   if (p === '/api/login' && req.method === 'POST') {
     const body = await bodyJson(req);
-    const r = auth.login(body && body.password, ip);
+    const r = auth.login(body && (body.code ?? body.password), ip);
     if (r.error) return json(res, r.status, { error: r.error });
     res.setHeader('Set-Cookie', auth.cookie(r.token, isSecure(req)));
-    return json(res, 200, { role: r.role, factions: auth.state.factions });
+    return json(res, 200, { role: r.role, player: r.player, factions: auth.state.factions });
   }
   if (p === '/api/logout' && req.method === 'POST') {
     auth.logout(req);
@@ -147,7 +147,7 @@ async function api(req, res, p, ip, sess) {
   if (p === '/api/health') return json(res, 200, { ok: true, rooms: rooms.size, players: [...rooms.values()].reduce((s, r) => s + r.humans, 0) });
   if (!sess) return json(res, 401, { error: 'Login required.' });
 
-  if (p === '/api/session') return json(res, 200, { role: sess.role, factions: auth.state.factions });
+  if (p === '/api/session') return json(res, 200, { role: sess.role, player: sess.player, factions: auth.state.factions });
   if (p === '/api/servers' && req.method === 'GET') {
     const list = [...rooms.values()].filter((r) => r.isPublic).map((r) => r.info()).sort((a, b) => b.humans - a.humans);
     return json(res, 200, list);
@@ -162,17 +162,32 @@ async function api(req, res, p, ip, sess) {
       factions: auth.state.factions,
       bans: auth.state.bans.map((b) => ({ id: b.id, name: b.name, at: b.at, ip: maskIp(b.ip) })),
       players: onlinePlayers().map(({ ws, ...rest }) => rest),
+      codes: auth.playerList(),
+      nextNumber: auth.suggestNumber(),
     });
   }
   if (req.method !== 'POST') return json(res, 405, { error: 'Use POST.' });
   const body = (await bodyJson(req)) || {};
   switch (p) {
     case '/api/admin/password': {
-      const err = auth.setPassword(body.which, body.password);
+      const err = auth.setAdminPassword(body.password);
       if (err) return json(res, 400, { error: err });
-      // keep the admin who made the change logged in
-      if (body.which === 'admin') sess.gen = auth.state.adminGen;
-      return json(res, 200, { ok: true, note: body.which === 'entry' ? 'Players using the old entry password have been logged out.' : 'Other admin sessions have been logged out.' });
+      sess.gen = auth.state.adminGen; // keep the admin who made the change logged in
+      return json(res, 200, { ok: true, note: 'Other admin sessions have been logged out. It lasts until the server restarts; set ADMIN_PASSWORD on your host to keep it.' });
+    }
+    case '/api/admin/code': {
+      const r = auth.createCode(body.player, body.name);
+      return r.error ? json(res, 400, r) : json(res, 201, r);
+    }
+    case '/api/admin/revoke':
+    case '/api/admin/restore': {
+      const n = Number(body.player);
+      if (!Number.isInteger(n) || n < 1 || n > 999) return json(res, 400, { error: 'Unknown player number.' });
+      if (p === '/api/admin/revoke') {
+        auth.revoke(n);
+        for (const pl of onlinePlayers()) if (pl.player === n) pl.ws.close(4003, 'Revoked');
+      } else auth.restore(n);
+      return json(res, 200, { ok: true });
     }
     case '/api/admin/faction': {
       const r = auth.addFaction(body);
@@ -184,10 +199,10 @@ async function api(req, res, p, ip, sess) {
       const pl = findPlayer(String(body.key));
       if (!pl) return json(res, 404, { error: 'That player has left.' });
       if (p === '/api/admin/ban') {
-        if (pl.ws.ip === ip) return json(res, 400, { error: 'You can\'t ban your own address.' });
-        auth.ban(pl.ws.ip, pl.name);
-        // drop every connection from that address
-        for (const other of onlinePlayers()) if (other.ws.ip === pl.ws.ip) other.ws.close(4003, 'Banned');
+        // banning blocks the player's own number, so only that person is affected
+        if (!pl.player) return json(res, 400, { error: 'That player is logged in as admin.' });
+        auth.revoke(pl.player);
+        for (const other of onlinePlayers()) if (other.player === pl.player) other.ws.close(4003, 'Banned');
       } else pl.ws.close(4002, 'Kicked');
       return json(res, 200, { ok: true });
     }
@@ -212,7 +227,9 @@ const connsPerIp = new Map();
 wss.on('connection', (ws, req) => {
   const ip = clientIp(req);
   ws.ip = ip;
-  if (!auth.session(req, ip)) { ws.close(4001, 'Login required'); return; }
+  const wsSess = auth.session(req, ip);
+  if (!wsSess) { ws.close(4001, 'Login required'); return; }
+  ws.player = wsSess.player || null;
   const n = (connsPerIp.get(ip) || 0) + 1;
   connsPerIp.set(ip, n);
   if (n > SC.maxConnectionsPerIp) { ws.close(1008, 'Too many connections'); }

@@ -54,8 +54,8 @@
     <div id="nwLogin" class="nw-login" hidden>
       <form id="nwLoginForm" class="nw-login-card" autocomplete="off">
         <h3>Members' area</h3>
-        <p>Enter your access code to continue.</p>
-        <input id="nwPass" type="password" aria-label="Access code" autocomplete="current-password" />
+        <p>Enter your 8-digit player code.</p>
+        <input id="nwPass" type="password" aria-label="Player code" autocomplete="current-password" placeholder="e.g. 007 31415" />
         <button>Continue</button>
         <p id="nwLoginErr" class="nw-login-err"></p>
         <button type="button" id="nwLoginCancel" class="nw-link">Back to the solver</button>
@@ -153,8 +153,11 @@
     <div class="panel wide admin">
       <h2>Admin</h2>
       <h3>Passwords</h3>
-      <div class="row"><label>New entry password</label><input id="admEntry" type="password" autocomplete="new-password" /><button id="admEntryBtn" class="secondary small">Change</button></div>
-      <div class="row"><label>New admin password</label><input id="admAdmin" type="password" autocomplete="new-password" /><button id="admAdminBtn" class="secondary small">Change</button></div>
+      <div class="row"><label>New admin password</label><input id="admAdmin" type="password" autocomplete="new-password" placeholder="5 letters + 2 digits, e.g. otter58" /><button id="admAdminBtn" class="secondary small">Change</button></div>
+      <h3>Player codes</h3>
+      <div class="row"><label>Player number</label><input id="admNum" type="number" min="1" max="999" class="tag" /><input id="admNumName" placeholder="Name (optional)" maxlength="24" /><button id="admCodeBtn" class="secondary small">Create code</button></div>
+      <div id="admNewCode" class="newcode" hidden></div>
+      <div id="admCodes" class="admList"></div>
       <h3>Factions</h3>
       <div id="admFactions" class="admList"></div>
       <div class="row"><input id="admFName" placeholder="Faction name" maxlength="24" /><input id="admFTag" placeholder="TAG" maxlength="5" class="tag" /><input id="admFColour" type="color" value="#d9b45a" /><button id="admFAdd" class="secondary small">Create</button></div>

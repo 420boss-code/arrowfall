@@ -1,12 +1,18 @@
-// Access control: an entry password (play) and an admin password (play + admin panel), login
-// sessions in HttpOnly cookies, brute-force lockout, factions and bans.
+// Access control.
+//   Players log in with their own 8-digit player code: 3 digits of player number (001–999) followed
+//   by a 5-digit check calculated from a server secret (HMAC). Codes are never stored: the server
+//   recalculates the check at login, so they keep working across restarts on hosts whose disk is
+//   wiped (e.g. Render's free tier). Revoking a player blocks their number.
+//   The admin logs in with the admin password (a 5-letter word and 2 digits, e.g. "otter58").
 //
-// Passwords are stored only as scrypt hashes. Where they come from, in order:
-//   1. data/auth.json – written whenever the admin changes something (passwords, factions, bans)
-//   2. ENTRY_PASSWORD / ADMIN_PASSWORD environment variables
-//   3. otherwise random ones are generated and printed to the server log once
-// On hosts with a temporary disk (e.g. Render's free tier) data/auth.json is lost on restart, so the
-// environment variables win again then; mount a persistent disk at data/ to keep admin changes.
+// Settings (environment variables):
+//   ADMIN_PASSWORD   the admin password
+//   CODE_SECRET      long random secret that player codes are derived from (keep it private;
+//                    changing it changes every player's code)
+//   REVOKED_PLAYERS  comma-separated player numbers that are always blocked, e.g. "7,12"
+//   DATA_DIR         where admin changes are saved (factions, revocations, names) – optional
+// Changes made in the admin panel are saved to DATA_DIR/auth.json, which a wiped disk loses;
+// the environment variables always apply.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,10 +23,10 @@ const DATA_DIR = process.env.DATA_DIR || path.resolve(path.dirname(fileURLToPath
 const FILE = path.join(DATA_DIR, 'auth.json');
 const SESSION_DAYS = 14;
 const COOKIE = 'af_session';
+const MAX_PLAYER = 999;
 
 function hash(password, salt = crypto.randomBytes(16).toString('hex')) {
-  const key = crypto.scryptSync(String(password), salt, 32).toString('hex');
-  return `${salt}:${key}`;
+  return `${salt}:${crypto.scryptSync(String(password), salt, 32).toString('hex')}`;
 }
 
 function check(password, stored) {
@@ -31,13 +37,35 @@ function check(password, stored) {
   return want.length === test.length && crypto.timingSafeEqual(want, test);
 }
 
-const randomPassword = () => crypto.randomBytes(9).toString('base64url');
+// The 5-digit check for a player number.
+export function codeCheck(secret, n) {
+  const h = crypto.createHmac('sha256', secret).update(`arrowfall-player-${n}`).digest();
+  return String(h.readUInt32BE(0) % 100000).padStart(5, '0');
+}
+
+export function playerCode(secret, n) {
+  return String(n).padStart(3, '0') + codeCheck(secret, n);
+}
+
+// Parse "00731415", "007-31415" or "007 31415" into a player number if the check matches.
+export function verifyCode(secret, input) {
+  const digits = String(input || '').replace(/[\s-]/g, '');
+  if (!/^\d{8}$/.test(digits)) return null;
+  const n = Number(digits.slice(0, 3));
+  if (n < 1 || n > MAX_PLAYER) return null;
+  const want = Buffer.from(codeCheck(secret, n)), got = Buffer.from(digits.slice(3));
+  return crypto.timingSafeEqual(want, got) ? n : null;
+}
+
+const WORDS = ['otter', 'raven', 'cedar', 'flint', 'heron', 'maple', 'birch', 'amber', 'quail', 'stoat', 'thorn', 'aspen', 'lynx', 'hazel', 'brook'].filter((w) => w.length === 5);
+const randomAdminPassword = () => WORDS[crypto.randomInt(WORDS.length)] + String(crypto.randomInt(10, 100));
 
 export class Auth {
   constructor() {
-    this.sessions = new Map();       // token -> { role, ip, expires, gen }
+    this.sessions = new Map();       // token -> { role, ip, player, expires, gen }
     this.attempts = new Map();       // ip -> { count, until }
-    this.state = { entryHash: null, adminHash: null, entryGen: 1, adminGen: 1, factions: [], bans: [] };
+    // names: player number -> label given by the admin; revoked: numbers blocked from the panel
+    this.state = { adminHash: null, adminGen: 1, names: {}, revoked: [], factions: [], bans: [] };
     this._load();
   }
 
@@ -45,18 +73,19 @@ export class Auth {
     try {
       if (fs.existsSync(FILE)) Object.assign(this.state, JSON.parse(fs.readFileSync(FILE, 'utf8')));
     } catch (e) { console.warn('Could not read', FILE, e.message); }
-    const gen = [];
-    if (!this.state.entryHash) {
-      const pw = process.env.ENTRY_PASSWORD || randomPassword();
-      if (!process.env.ENTRY_PASSWORD) gen.push(`entry password: ${pw}`);
-      this.state.entryHash = hash(pw);
+    const notes = [];
+    this.secret = process.env.CODE_SECRET;
+    if (!this.secret || this.secret.length < 16) {
+      this.secret = crypto.randomBytes(24).toString('base64url');
+      notes.push('CODE_SECRET is not set (or too short): player codes made now stop working when the server restarts.');
     }
     if (!this.state.adminHash) {
-      const pw = process.env.ADMIN_PASSWORD || randomPassword();
-      if (!process.env.ADMIN_PASSWORD) gen.push(`admin password: ${pw}`);
+      const pw = process.env.ADMIN_PASSWORD || randomAdminPassword();
+      if (!process.env.ADMIN_PASSWORD) notes.push(`admin password for this run: ${pw}`);
       this.state.adminHash = hash(pw);
     }
-    if (gen.length) console.log(`No passwords configured – generated for this run:\n  ${gen.join('\n  ')}\nSet ENTRY_PASSWORD and ADMIN_PASSWORD to choose your own.`);
+    this.envRevoked = new Set(String(process.env.REVOKED_PLAYERS || '').split(',').map((s) => Number(s.trim())).filter((n) => n >= 1 && n <= MAX_PLAYER));
+    if (notes.length) console.log(notes.join('\n'));
   }
 
   _save() {
@@ -66,7 +95,48 @@ export class Auth {
     } catch (e) { console.warn('Could not save', FILE, e.message); }
   }
 
-  // ---------------------------------------------------------------- bans
+  // ---------------------------------------------------------------- players
+  isRevoked(n) { return this.envRevoked.has(n) || this.state.revoked.includes(n); }
+
+  createCode(n, label) {
+    n = Number(n);
+    if (!Number.isInteger(n) || n < 1 || n > MAX_PLAYER) return { error: `Player numbers go from 1 to ${MAX_PLAYER}.` };
+    const name = cleanName(label, 24, '');
+    if (name) this.state.names[n] = name; else delete this.state.names[n];
+    this._save();
+    return { player: n, code: playerCode(this.secret, n), name, revoked: this.isRevoked(n) };
+  }
+
+  // The lowest number not yet named, revoked or currently logged in.
+  suggestNumber() {
+    const used = new Set([...Object.keys(this.state.names).map(Number), ...this.state.revoked, ...this.envRevoked]);
+    for (const s of this.sessions.values()) if (s.player) used.add(s.player);
+    for (let n = 1; n <= MAX_PLAYER; n++) if (!used.has(n)) return n;
+    return null;
+  }
+
+  revoke(n) {
+    n = Number(n);
+    if (!this.state.revoked.includes(n)) this.state.revoked.push(n);
+    for (const [t, s] of this.sessions) if (s.player === n) this.sessions.delete(t);
+    this._save();
+  }
+
+  restore(n) {
+    n = Number(n);
+    this.state.revoked = this.state.revoked.filter((x) => x !== n);
+    this._save();
+  }
+
+  playerList() {
+    const nums = new Set([...Object.keys(this.state.names).map(Number), ...this.state.revoked, ...this.envRevoked]);
+    return [...nums].sort((a, b) => a - b).map((n) => ({
+      player: n, name: this.state.names[n] || '', code: playerCode(this.secret, n),
+      revoked: this.isRevoked(n), permanent: this.envRevoked.has(n),
+    }));
+  }
+
+  // ---------------------------------------------------------------- address bans (kept for abuse)
   isBanned(ip) { return this.state.bans.some((b) => b.ip === ip); }
 
   ban(ip, name) {
@@ -82,25 +152,29 @@ export class Auth {
   }
 
   // ---------------------------------------------------------------- login
-  // Returns { role, token } or { error, status }.
-  login(password, ip) {
+  // Returns { role, token, player } or { error, status }.
+  login(input, ip) {
     if (this.isBanned(ip)) return { error: 'Access denied.', status: 403 };
     const now = Date.now();
     const at = this.attempts.get(ip) || { count: 0, until: 0 };
     if (at.until > now) return { error: `Too many attempts – try again in ${Math.ceil((at.until - now) / 1000)} s.`, status: 429 };
-    let role = null;
-    if (check(password, this.state.adminHash)) role = 'admin';
-    else if (check(password, this.state.entryHash)) role = 'player';
+    let role = null, player = null;
+    if (check(input, this.state.adminHash)) role = 'admin';
+    else {
+      player = verifyCode(this.secret, input);
+      if (player && this.isRevoked(player)) { at.count++; this.attempts.set(ip, at); return { error: 'This player code has been revoked.', status: 403 }; }
+      if (player) role = 'player';
+    }
     if (!role) {
       at.count++;
-      if (at.count >= 5) { at.until = now + 60_000 * Math.min(10, at.count - 4); }
+      if (at.count >= 5) at.until = now + 60_000 * Math.min(10, at.count - 4);
       this.attempts.set(ip, at);
-      return { error: 'Wrong password.', status: 401 };
+      return { error: 'That code was not recognised.', status: 401 };
     }
     this.attempts.delete(ip);
     const token = crypto.randomBytes(24).toString('base64url');
-    this.sessions.set(token, { role, ip, expires: now + SESSION_DAYS * 864e5, gen: role === 'admin' ? this.state.adminGen : this.state.entryGen });
-    return { role, token };
+    this.sessions.set(token, { role, ip, player, expires: now + SESSION_DAYS * 864e5, gen: this.state.adminGen });
+    return { role, token, player };
   }
 
   logout(req) {
@@ -113,13 +187,15 @@ export class Auth {
     return m ? m[1] : null;
   }
 
-  // The session behind a request, or null. Sessions die when their password is changed.
+  // The session behind a request, or null. Admin sessions die when the admin password changes;
+  // player sessions die when their number is revoked.
   session(req, ip) {
     const t = this._token(req);
     const s = t && this.sessions.get(t);
     if (!s) return null;
-    const gen = s.role === 'admin' ? this.state.adminGen : this.state.entryGen;
-    if (s.expires < Date.now() || s.gen !== gen || this.isBanned(ip)) { this.sessions.delete(t); return null; }
+    const dead = s.expires < Date.now() || this.isBanned(ip) ||
+      (s.role === 'admin' ? s.gen !== this.state.adminGen : this.isRevoked(s.player));
+    if (dead) { this.sessions.delete(t); return null; }
     return s;
   }
 
@@ -131,12 +207,11 @@ export class Auth {
 
   clearCookie() { return `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`; }
 
-  // ---------------------------------------------------------------- admin actions
-  setPassword(which, password) {
-    if (typeof password !== 'string' || password.length < 6 || password.length > 128) return 'Passwords need 6 to 128 characters.';
-    if (which === 'entry') { this.state.entryHash = hash(password); this.state.entryGen++; }
-    else if (which === 'admin') { this.state.adminHash = hash(password); this.state.adminGen++; }
-    else return 'Unknown password.';
+  // ---------------------------------------------------------------- admin settings
+  setAdminPassword(password) {
+    if (typeof password !== 'string' || !/^[A-Za-z]{5}\d{2}$/.test(password)) return 'The admin password must be a 5-letter word followed by 2 digits, e.g. otter58.';
+    this.state.adminHash = hash(password);
+    this.state.adminGen++;
     this._save();
     return null;
   }
@@ -162,7 +237,6 @@ export class Auth {
   faction(id) { return this.state.factions.find((f) => f.id === id) || null; }
 }
 
-// Show a little of an address so admins can tell people apart without exposing it whole.
 export function maskIp(ip) {
   const v4 = /(\d+)\.(\d+)\.\d+\.\d+$/.exec(ip || '');
   if (v4) return `${v4[1]}.${v4[2]}.x.x`;
