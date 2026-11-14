@@ -49,3 +49,13 @@ body { margin: 0; background: #f6f7fb; }
   #site nav a { margin: 0 14px 0 0; }
   #site .nw-table div { font-size: 11px; }
 }
+
+#site .nw-login { position: fixed; inset: 0; background: rgba(20, 28, 48, .45); display: flex; align-items: center; justify-content: center; z-index: 50; }
+#site .nw-login[hidden] { display: none; }
+#site .nw-login-card { background: #fff; border-radius: 14px; padding: 26px 28px; width: min(360px, 92vw); box-shadow: 0 20px 60px rgba(0,0,0,.25); }
+#site .nw-login-card h3 { margin: 0 0 4px; font-family: Georgia, serif; font-size: 22px; }
+#site .nw-login-card p { margin: 0 0 14px; color: var(--muted); }
+#site .nw-login-card input { width: 100%; box-sizing: border-box; font-size: 18px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 10px; }
+#site .nw-login-card button:not(.nw-link) { width: 100%; background: var(--brand); color: #fff; border: 0; border-radius: 8px; padding: 11px; font-size: 16px; cursor: pointer; font-weight: 600; }
+#site .nw-login-err { color: var(--bad) !important; min-height: 20px; margin: 10px 0 4px !important; font-weight: 600; }
+#site .nw-link { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0; font-size: 14px; }

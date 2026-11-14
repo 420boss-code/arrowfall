@@ -39,13 +39,19 @@ export class Room {
   _roster() { return this.game.archers.map((a) => [a.idx, a.name, a.human ? 1 : 0]); }
   _stats() { return this.game.archers.map((a) => { const s = a.stats; return [s.kills, s.deaths, s.shots, s.hits, Math.round(s.damage), s.headshots]; }); }
 
-  join(ws, name) {
+  join(ws, name, faction = null) {
     const g = this.game;
     if (this.clients.size >= g.archers.length) return 'This server is full.';
     // the first arrival in a sleeping room gets a fresh match
     if (this.clients.size === 0) { g.startMatch(this.opts); g.events.length = 0; }
     const humansOn = (t) => [...this.clients.values()].filter((c) => g.archers[c.idx].team === t).length;
-    const prefer = humansOn('blue') <= humansOn('red') ? 'blue' : 'red';
+    let prefer = humansOn('blue') <= humansOn('red') ? 'blue' : 'red';
+    // factions fight together: join the side most of your faction is already on
+    if (faction) {
+      const mates = (t) => [...this.clients.values()].filter((c) => c.faction && c.faction.id === faction.id && g.archers[c.idx].team === t).length;
+      const b = mates('blue'), r = mates('red');
+      if (b !== r) prefer = b > r ? 'blue' : 'red';
+    }
     const other = prefer === 'blue' ? 'red' : 'blue';
     let free = g.teams[prefer].filter((a) => !a.remote);
     if (!free.length) free = g.teams[other].filter((a) => !a.remote);
@@ -53,12 +59,12 @@ export class Room {
     const slot = free.find((a) => a.alive) || free[0];
     slot.remote = true;
     slot.human = true;
-    slot.name = name;
+    slot.name = faction ? `[${faction.tag}] ${name}` : name;
     slot.epoch++;
     slot.drawing = false;
     slot.drawTime = 0;
     slot.moveDir.set(0, 0);
-    this.clients.set(ws, { idx: slot.idx, name });
+    this.clients.set(ws, { idx: slot.idx, name, faction });
     this._send(ws, {
       t: 'welcome',
       you: slot.idx,

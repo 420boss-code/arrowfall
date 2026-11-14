@@ -10,6 +10,9 @@ import { WebSocketServer } from 'ws';
 import { Room } from './Room.js';
 import { CONFIG } from '../src/config.js';
 import { cleanName } from '../src/net/protocol.js';
+import { Auth, maskIp } from './auth.js';
+
+const auth = new Auth();
 
 const SC = CONFIG.server;
 const PORT = Number(process.env.PORT) || SC.port;
@@ -80,13 +83,29 @@ async function createFromRequest(req, res) {
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.webp': 'image/webp', '.jpg': 'image/jpeg' };
 
-function serveStatic(req, res) {
+// The maths page and its own small bundle are public (the disguise); everything else – the game
+// bundle, Three.js, models – is only sent to logged-in visitors.
+let publicFiles = null;
+function isPublic(urlPath) {
+  if (!publicFiles) {
+    publicFiles = new Set(['/', '/index.html', '/favicon.ico']);
+    try {
+      const html = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
+      for (const m of html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)) publicFiles.add(m[1]);
+    } catch { /* no build yet */ }
+  }
+  return publicFiles.has(urlPath);
+}
+
+function serveStatic(req, res, sess) {
   if (!fs.existsSync(DIST)) {
     res.writeHead(503, { 'Content-Type': 'text/plain' });
     return res.end('No build found. Run "npm run build" first, or use "npm run dev" while developing.');
   }
   const urlPath = decodeURIComponent(new URL(req.url, 'http://x').pathname);
   let file = path.normalize(path.join(DIST, urlPath));
+  const exists = fs.existsSync(file) && !fs.statSync(file).isDirectory();
+  if (exists && !isPublic(urlPath) && !sess) { res.writeHead(401, { 'Content-Type': 'text/plain' }); return res.end('Login required.'); }
   if (!file.startsWith(DIST)) { res.writeHead(403); return res.end(); }
   if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(DIST, 'index.html');
   const type = TYPES[path.extname(file)] || 'application/octet-stream';
@@ -95,16 +114,95 @@ function serveStatic(req, res) {
   fs.createReadStream(file).pipe(res);
 }
 
-const server = http.createServer((req, res) => {
-  const p = req.url.split('?')[0];
+const isSecure = (req) => TRUST_PROXY && String(req.headers['x-forwarded-proto'] || '').startsWith('https');
+
+async function bodyJson(req) {
+  try { return JSON.parse(await readBody(req)); } catch { return null; }
+}
+
+// Everyone connected, for the admin panel. A key identifies one player in one room.
+function onlinePlayers() {
+  const out = [];
+  for (const r of rooms.values()) {
+    for (const [ws, c] of r.clients) out.push({ key: `${r.id}:${c.idx}`, room: r.name, roomId: r.id, name: c.name, faction: c.faction ? c.faction.tag : null, ip: maskIp(ws.ip), ws });
+  }
+  return out;
+}
+
+function findPlayer(key) { return onlinePlayers().find((p) => p.key === key) || null; }
+
+async function api(req, res, p, ip, sess) {
+  if (p === '/api/login' && req.method === 'POST') {
+    const body = await bodyJson(req);
+    const r = auth.login(body && body.password, ip);
+    if (r.error) return json(res, r.status, { error: r.error });
+    res.setHeader('Set-Cookie', auth.cookie(r.token, isSecure(req)));
+    return json(res, 200, { role: r.role, factions: auth.state.factions });
+  }
+  if (p === '/api/logout' && req.method === 'POST') {
+    auth.logout(req);
+    res.setHeader('Set-Cookie', auth.clearCookie());
+    return json(res, 200, { ok: true });
+  }
+  if (p === '/api/health') return json(res, 200, { ok: true, rooms: rooms.size, players: [...rooms.values()].reduce((s, r) => s + r.humans, 0) });
+  if (!sess) return json(res, 401, { error: 'Login required.' });
+
+  if (p === '/api/session') return json(res, 200, { role: sess.role, factions: auth.state.factions });
   if (p === '/api/servers' && req.method === 'GET') {
     const list = [...rooms.values()].filter((r) => r.isPublic).map((r) => r.info()).sort((a, b) => b.humans - a.humans);
     return json(res, 200, list);
   }
-  if (p === '/api/servers' && req.method === 'POST') return void createFromRequest(req, res).catch(() => json(res, 500, { error: 'Server error.' }));
-  if (p === '/api/health') return json(res, 200, { ok: true, rooms: rooms.size, players: [...rooms.values()].reduce((s, r) => s + r.humans, 0) });
+  if (p === '/api/servers' && req.method === 'POST') return createFromRequest(req, res);
+
+  // ---- admin only
+  if (!p.startsWith('/api/admin/')) return json(res, 404, { error: 'Not found.' });
+  if (sess.role !== 'admin') return json(res, 403, { error: 'Admins only.' });
+  if (p === '/api/admin/state') {
+    return json(res, 200, {
+      factions: auth.state.factions,
+      bans: auth.state.bans.map((b) => ({ id: b.id, name: b.name, at: b.at, ip: maskIp(b.ip) })),
+      players: onlinePlayers().map(({ ws, ...rest }) => rest),
+    });
+  }
+  if (req.method !== 'POST') return json(res, 405, { error: 'Use POST.' });
+  const body = (await bodyJson(req)) || {};
+  switch (p) {
+    case '/api/admin/password': {
+      const err = auth.setPassword(body.which, body.password);
+      if (err) return json(res, 400, { error: err });
+      // keep the admin who made the change logged in
+      if (body.which === 'admin') sess.gen = auth.state.adminGen;
+      return json(res, 200, { ok: true, note: body.which === 'entry' ? 'Players using the old entry password have been logged out.' : 'Other admin sessions have been logged out.' });
+    }
+    case '/api/admin/faction': {
+      const r = auth.addFaction(body);
+      return r.error ? json(res, 400, r) : json(res, 201, r);
+    }
+    case '/api/admin/faction/delete': auth.removeFaction(String(body.id)); return json(res, 200, { ok: true });
+    case '/api/admin/kick':
+    case '/api/admin/ban': {
+      const pl = findPlayer(String(body.key));
+      if (!pl) return json(res, 404, { error: 'That player has left.' });
+      if (p === '/api/admin/ban') {
+        if (pl.ws.ip === ip) return json(res, 400, { error: 'You can\'t ban your own address.' });
+        auth.ban(pl.ws.ip, pl.name);
+        // drop every connection from that address
+        for (const other of onlinePlayers()) if (other.ws.ip === pl.ws.ip) other.ws.close(4003, 'Banned');
+      } else pl.ws.close(4002, 'Kicked');
+      return json(res, 200, { ok: true });
+    }
+    case '/api/admin/unban': auth.unban(String(body.id)); return json(res, 200, { ok: true });
+  }
+  return json(res, 404, { error: 'Not found.' });
+}
+
+const server = http.createServer((req, res) => {
+  const p = req.url.split('?')[0];
+  const ip = clientIp(req);
+  const sess = auth.session(req, ip);
+  if (p.startsWith('/api/')) return void api(req, res, p, ip, sess).catch((e) => { console.error(e); json(res, 500, { error: 'Server error.' }); });
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
-  serveStatic(req, res);
+  serveStatic(req, res, sess);
 });
 
 // ------------------------------------------------------------------ WebSocket
@@ -113,6 +211,8 @@ const connsPerIp = new Map();
 
 wss.on('connection', (ws, req) => {
   const ip = clientIp(req);
+  ws.ip = ip;
+  if (!auth.session(req, ip)) { ws.close(4001, 'Login required'); return; }
   const n = (connsPerIp.get(ip) || 0) + 1;
   connsPerIp.set(ip, n);
   if (n > SC.maxConnectionsPerIp) { ws.close(1008, 'Too many connections'); }
@@ -135,7 +235,8 @@ wss.on('connection', (ws, req) => {
     if (m.t === 'join' && !room) {
       const r = rooms.get(String(m.room || '').toUpperCase());
       if (!r) { ws.send(JSON.stringify({ t: 'error', msg: 'That server no longer exists.' })); return; }
-      const err = r.join(ws, cleanName(m.name));
+      const faction = m.faction ? auth.faction(String(m.faction)) : null;
+      const err = r.join(ws, cleanName(m.name), faction);
       if (err) { ws.send(JSON.stringify({ t: 'error', msg: err })); return; }
       room = r;
       return;

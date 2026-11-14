@@ -13,3 +13,7 @@ services:
         value: "22"
       - key: TRUST_PROXY        # Render sits behind a proxy: use the real client IP for rate limits
         value: "1"
+      - key: ENTRY_PASSWORD     # lets people in to play – entered in Render's dashboard, never in git
+        sync: false
+      - key: ADMIN_PASSWORD     # play + admin panel – entered in Render's dashboard, never in git
+        sync: false

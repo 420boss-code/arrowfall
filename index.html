@@ -51,6 +51,17 @@
       <p id="nwTableSum" class="nw-tablesum">&nbsp;</p>
     </section>
 
+    <div id="nwLogin" class="nw-login" hidden>
+      <form id="nwLoginForm" class="nw-login-card" autocomplete="off">
+        <h3>Members' area</h3>
+        <p>Enter your access code to continue.</p>
+        <input id="nwPass" type="password" aria-label="Access code" autocomplete="current-password" />
+        <button>Continue</button>
+        <p id="nwLoginErr" class="nw-login-err"></p>
+        <button type="button" id="nwLoginCancel" class="nw-link">Back to the solver</button>
+      </form>
+    </div>
+
     <footer class="nw-foot">Numberwell · free maths practice · no sign-up, no adverts</footer>
   </div>
 
@@ -104,6 +115,8 @@
       <div class="row"><label>Fullscreen (locks Ctrl+W)</label><input type="checkbox" id="optFull" /></div>
       <button id="btnStart">Play offline</button>
       <button id="btnOnline" class="online">Play online – public servers</button>
+      <button id="btnAdmin" class="secondary hidden">Admin panel</button>
+      <button id="btnLogout" class="secondary">Log out</button>
       <p id="startNote" class="note"></p>
       <div class="controls">
         <b>WASD</b> move · <b>Shift</b> sprint · <b>C</b> toggle crouch (or hold <b>Ctrl</b>) · <b>Space</b> jump · <b>E</b> pick up arrows · <b>Q</b> bandage<br />
@@ -117,6 +130,7 @@
     <div class="panel wide">
       <h2>Public servers</h2>
       <div class="row"><label>Your name</label><input id="playerName" maxlength="16" placeholder="Archer" /></div>
+      <div class="row"><label>Faction</label><select id="playerFaction"><option value="">None</option></select></div>
       <table class="servers">
         <thead><tr><th>Server</th><th>Mode</th><th>Bots</th><th>Players</th><th></th></tr></thead>
         <tbody id="serverList"></tbody>
@@ -135,6 +149,25 @@
     </div>
   </div>
 
+  <div id="adminMenu" class="overlay menu hidden">
+    <div class="panel wide admin">
+      <h2>Admin</h2>
+      <h3>Passwords</h3>
+      <div class="row"><label>New entry password</label><input id="admEntry" type="password" autocomplete="new-password" /><button id="admEntryBtn" class="secondary small">Change</button></div>
+      <div class="row"><label>New admin password</label><input id="admAdmin" type="password" autocomplete="new-password" /><button id="admAdminBtn" class="secondary small">Change</button></div>
+      <h3>Factions</h3>
+      <div id="admFactions" class="admList"></div>
+      <div class="row"><input id="admFName" placeholder="Faction name" maxlength="24" /><input id="admFTag" placeholder="TAG" maxlength="5" class="tag" /><input id="admFColour" type="color" value="#d9b45a" /><button id="admFAdd" class="secondary small">Create</button></div>
+      <h3>Players online</h3>
+      <div id="admPlayers" class="admList"></div>
+      <h3>Bans</h3>
+      <div id="admBans" class="admList"></div>
+      <p id="admStatus" class="note"></p>
+      <button id="admRefresh" class="secondary">Refresh</button>
+      <button id="admBack" class="secondary">Back</button>
+    </div>
+  </div>
+
   <div id="pauseMenu" class="overlay menu hidden">
     <div class="panel">
       <h2 id="pauseTitle">Paused</h2>
@@ -142,6 +175,7 @@
       <div class="row"><label>Mouse sensitivity</label><input type="range" id="pSens" min="0.2" max="3" step="0.05" value="1" /></div>
       <div class="row"><label>Volume</label><input type="range" id="pVol" min="0" max="1" step="0.05" value="0.8" /></div>
       <button id="btnResume">Resume</button>
+      <button id="btnPauseAdmin" class="secondary hidden">Admin panel</button>
       <button id="btnQuit" class="secondary">Quit to menu</button>
     </div>
   </div>

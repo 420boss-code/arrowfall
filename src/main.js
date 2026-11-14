@@ -11,13 +11,52 @@ let unlocked = false;
 
 async function openGame() {
   if (unlocked) return;
+  // the game is members-only: check for a login session first
+  let session = null;
+  try {
+    const r = await fetch('/api/session', { credentials: 'same-origin' });
+    if (r.ok) session = await r.json();
+  } catch { /* server unreachable */ }
+  if (!session) { showLogin(); return; }
+  launch(session);
+}
+
+async function launch(session) {
+  if (unlocked) return;
   unlocked = true;
+  window.__afSession = session;
+  $('nwLogin').hidden = true;
   $('site').hidden = true;
   $('gameRoot').hidden = false;
   // the game (and its styles) are only downloaded now, as a separate chunk
   const { startGame } = await import('./game-entry.js');
   startGame();
 }
+
+function showLogin() {
+  $('nwLogin').hidden = false;
+  $('nwLoginErr').textContent = '';
+  $('nwPass').value = '';
+  setTimeout(() => $('nwPass').focus(), 30);
+}
+
+$('nwLoginForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const err = $('nwLoginErr');
+  err.textContent = '';
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: $('nwPass').value }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) { err.textContent = data.error || 'That code was not accepted.'; return; }
+    launch(data);
+  } catch {
+    err.textContent = 'Could not reach the server.';
+  }
+});
+$('nwLoginCancel').addEventListener('click', () => { $('nwLogin').hidden = true; $('nwQuery').value = ''; });
 
 // ---------------------------------------------------------------- solver
 function showResult(q) {

@@ -43,6 +43,26 @@ Options: `--only pine,broadleaf,bush`, `--variants 2` (default: 2 of each kind, 
 
 Thousands of trees are drawn at once, so these limits matter; they're in `config.js` under `forest`. Check Meshy's terms for how you may use and must credit the models.
 
+## Passwords, admin panel and factions
+
+The maths page is public. Typing **1+1** now asks for an access code, and the server sends nothing else (the game itself, the tree models, the server list and multiplayer) without a login.
+
+- **Entry password:** lets you play, and nothing more.
+- **Admin password:** lets you play and adds an **Admin panel** button to the start and pause menus. From there admins can:
+  - **Change passwords:** changing one logs out everyone using the old one, except the admin who made the change.
+  - **Create and delete factions:** each has a name, a tag of up to 5 letters, and a colour. Players pick a faction when joining online, the tag appears before their name (`[WOLF] Gertie`), and members are put on the same team.
+  - **Kick or ban players who are online:** a ban blocks that person's internet address, which can also block others sharing the same connection, such as a household or school. Bans can be lifted again.
+
+**How it's secured:**
+
+- Passwords are stored only as salted scrypt hashes.
+- Logins use an HttpOnly cookie that lasts 14 days.
+- After 5 wrong guesses an address is locked out for 1 minute, growing to 10 minutes with repeated failures.
+
+**Setting the passwords.** Set the `ENTRY_PASSWORD` and `ADMIN_PASSWORD` environment variables; on Render the Blueprint asks for both when you create the service. Without them the server makes up random passwords and prints them once in its log. Changes made in the admin panel (passwords, factions, bans) are saved to `data/auth.json`.
+
+**Note for Render's free tier:** its disk is wiped whenever the service restarts or redeploys. When that happens, the passwords go back to the environment variables and factions and bans are lost. To keep them, attach a persistent disk (a paid feature) and point `DATA_DIR` at it.
+
 ## Online play
 
 From the game's start menu choose **Play online – public servers**:
