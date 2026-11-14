@@ -23,7 +23,9 @@ const DATA_DIR = process.env.DATA_DIR || path.resolve(path.dirname(fileURLToPath
 const FILE = path.join(DATA_DIR, 'auth.json');
 const SESSION_DAYS = 14;
 const COOKIE = 'af_session';
-const MAX_PLAYER = 999;
+const MAX_PLAYER = 999;            // admin-made codes: 3-digit player numbers (8-digit codes)
+const SELF_MIN = 100000, SELF_MAX = 999999; // self-made codes: 6-digit player numbers (11-digit codes)
+const validNumber = (n) => Number.isInteger(n) && ((n >= 1 && n <= MAX_PLAYER) || (n >= SELF_MIN && n <= SELF_MAX));
 
 function hash(password, salt = crypto.randomBytes(16).toString('hex')) {
   return `${salt}:${crypto.scryptSync(String(password), salt, 32).toString('hex')}`;
@@ -44,16 +46,17 @@ export function codeCheck(secret, n) {
 }
 
 export function playerCode(secret, n) {
-  return String(n).padStart(3, '0') + codeCheck(secret, n);
+  return String(n).padStart(n > MAX_PLAYER ? 6 : 3, '0') + codeCheck(secret, n);
 }
 
 // Parse "00731415", "007-31415" or "007 31415" into a player number if the check matches.
 export function verifyCode(secret, input) {
   const digits = String(input || '').replace(/[\s-]/g, '');
-  if (!/^\d{8}$/.test(digits)) return null;
-  const n = Number(digits.slice(0, 3));
-  if (n < 1 || n > MAX_PLAYER) return null;
-  const want = Buffer.from(codeCheck(secret, n)), got = Buffer.from(digits.slice(3));
+  if (!/^(\d{8}|\d{11})$/.test(digits)) return null;
+  const split = digits.length === 8 ? 3 : 6;
+  const n = Number(digits.slice(0, split));
+  if (split === 3 ? n < 1 || n > MAX_PLAYER : n < SELF_MIN || n > SELF_MAX) return null;
+  const want = Buffer.from(codeCheck(secret, n)), got = Buffer.from(digits.slice(split));
   return crypto.timingSafeEqual(want, got) ? n : null;
 }
 
@@ -84,7 +87,11 @@ export class Auth {
       if (!process.env.ADMIN_PASSWORD) notes.push(`admin password for this run: ${pw}`);
       this.state.adminHash = hash(pw);
     }
-    this.envRevoked = new Set(String(process.env.REVOKED_PLAYERS || '').split(',').map((s) => Number(s.trim())).filter((n) => n >= 1 && n <= MAX_PLAYER));
+    this.envRevoked = new Set(String(process.env.REVOKED_PLAYERS || '').split(',').map((s) => Number(s.trim())).filter(validNumber));
+    if (process.env.ALLOW_SIGNUP === '0') this.state.signupOpen = false;
+    else if (typeof this.state.signupOpen !== 'boolean') this.state.signupOpen = true;
+    this.signups = new Map();   // ip -> [timestamps] (rate limit)
+    this.signupTimes = [];      // all sign-ups in the last hour
     if (notes.length) console.log(notes.join('\n'));
   }
 
@@ -114,6 +121,29 @@ export class Auth {
     for (let n = 1; n <= MAX_PLAYER; n++) if (!used.has(n)) return n;
     return null;
   }
+
+  // Self sign-up: a random unused 6-digit player number. Limited to 3 per address and 60 overall per hour.
+  signup(ip, label) {
+    if (!this.state.signupOpen) return { error: 'Sign-up is closed. Ask the admin for a player code.', status: 403 };
+    if (this.isBanned(ip)) return { error: 'Access denied.', status: 403 };
+    const now = Date.now(), hour = 3600_000;
+    const mine = (this.signups.get(ip) || []).filter((t) => now - t < hour);
+    this.signupTimes = this.signupTimes.filter((t) => now - t < hour);
+    if (mine.length >= 3) return { error: 'You have made 3 codes in the last hour – use one of those, or try later.', status: 429 };
+    if (this.signupTimes.length >= 60) return { error: 'Too many new players right now – try again later.', status: 429 };
+    const used = new Set([...Object.keys(this.state.names).map(Number), ...this.state.revoked, ...this.envRevoked]);
+    for (const s of this.sessions.values()) if (s.player) used.add(s.player);
+    let n;
+    do n = crypto.randomInt(SELF_MIN, SELF_MAX + 1); while (used.has(n));
+    mine.push(now); this.signups.set(ip, mine); this.signupTimes.push(now);
+    this.state.names[n] = cleanName(label, 24, '') || 'Self sign-up';
+    this._save();
+    const token = crypto.randomBytes(24).toString('base64url');
+    this.sessions.set(token, { role: 'player', ip, player: n, expires: now + SESSION_DAYS * 864e5, gen: this.state.adminGen });
+    return { role: 'player', player: n, code: playerCode(this.secret, n), token };
+  }
+
+  setSignup(open) { this.state.signupOpen = !!open; this._save(); }
 
   revoke(n) {
     n = Number(n);

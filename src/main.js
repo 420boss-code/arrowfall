@@ -33,12 +33,51 @@ async function launch(session) {
   startGame();
 }
 
-function showLogin() {
+const fmtCode = (c) => (c.length === 8 ? `${c.slice(0, 3)} ${c.slice(3)}` : `${c.slice(0, 6)} ${c.slice(6)}`);
+
+function showCard(id) {
+  for (const c of ['nwLoginForm', 'nwSignupForm', 'nwCodeCard']) $(c).hidden = c !== id;
+}
+
+async function showLogin() {
   $('nwLogin').hidden = false;
+  showCard('nwLoginForm');
   $('nwLoginErr').textContent = '';
   $('nwPass').value = '';
   setTimeout(() => $('nwPass').focus(), 30);
+  // offer self sign-up only while the admin allows it
+  $('nwSignupShow').hidden = true;
+  try {
+    const r = await fetch('/api/signup-status');
+    if (r.ok) $('nwSignupShow').hidden = !(await r.json()).open;
+  } catch { /* stays hidden */ }
 }
+
+let newSession = null;
+$('nwSignupShow').addEventListener('click', () => { showCard('nwSignupForm'); $('nwSignupErr').textContent = ''; setTimeout(() => $('nwSignupName').focus(), 30); });
+$('nwSignupBack').addEventListener('click', () => showCard('nwLoginForm'));
+$('nwSignupForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const err = $('nwSignupErr');
+  err.textContent = '';
+  try {
+    const r = await fetch('/api/signup', {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: $('nwSignupName').value }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) { err.textContent = data.error || 'Could not make a code.'; return; }
+    newSession = data;
+    $('nwCodeShow').textContent = fmtCode(data.code);
+    showCard('nwCodeCard');
+  } catch {
+    err.textContent = 'Could not reach the server.';
+  }
+});
+$('nwCodeCopy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('nwCodeShow').textContent.replace(/\s/g, '')); $('nwCodeCopy').textContent = 'Copied'; } catch { $('nwCodeCopy').textContent = 'Select the code above to copy it'; }
+});
+$('nwCodeGo').addEventListener('click', () => { if (newSession) launch(newSession); });
 
 $('nwLoginForm').addEventListener('submit', async (e) => {
   e.preventDefault();

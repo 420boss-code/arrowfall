@@ -59,3 +59,8 @@ body { margin: 0; background: #f6f7fb; }
 #site .nw-login-card button:not(.nw-link) { width: 100%; background: var(--brand); color: #fff; border: 0; border-radius: 8px; padding: 11px; font-size: 16px; cursor: pointer; font-weight: 600; }
 #site .nw-login-err { color: var(--bad) !important; min-height: 20px; margin: 10px 0 4px !important; font-weight: 600; }
 #site .nw-link { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 0; font-size: 14px; }
+
+#site .nw-login-card[hidden] { display: none; }
+#site .nw-code { font: 700 28px/1.2 ui-monospace, Menlo, monospace !important; letter-spacing: 3px; color: var(--ink) !important; text-align: center; background: var(--brand-2); border-radius: 8px; padding: 12px; }
+#site #nwCodeGo { width: 100%; background: var(--brand); color: #fff; border: 0; border-radius: 8px; padding: 11px; font-size: 16px; cursor: pointer; font-weight: 600; margin-top: 8px; }
+#site #nwLoginForm .nw-link { display: block; margin-top: 6px; }

@@ -139,6 +139,14 @@ async function api(req, res, p, ip, sess) {
     res.setHeader('Set-Cookie', auth.cookie(r.token, isSecure(req)));
     return json(res, 200, { role: r.role, player: r.player, factions: auth.state.factions });
   }
+  if (p === '/api/signup' && req.method === 'POST') {
+    const body = (await bodyJson(req)) || {};
+    const r = auth.signup(ip, body.name);
+    if (r.error) return json(res, r.status, { error: r.error });
+    res.setHeader('Set-Cookie', auth.cookie(r.token, isSecure(req)));
+    return json(res, 201, { role: r.role, player: r.player, code: r.code, factions: auth.state.factions });
+  }
+  if (p === '/api/signup-status') return json(res, 200, { open: auth.state.signupOpen });
   if (p === '/api/logout' && req.method === 'POST') {
     auth.logout(req);
     res.setHeader('Set-Cookie', auth.clearCookie());
@@ -163,6 +171,7 @@ async function api(req, res, p, ip, sess) {
       bans: auth.state.bans.map((b) => ({ id: b.id, name: b.name, at: b.at, ip: maskIp(b.ip) })),
       players: onlinePlayers().map(({ ws, ...rest }) => rest),
       codes: auth.playerList(),
+      signupOpen: auth.state.signupOpen,
       nextNumber: auth.suggestNumber(),
     });
   }
@@ -175,6 +184,7 @@ async function api(req, res, p, ip, sess) {
       sess.gen = auth.state.adminGen; // keep the admin who made the change logged in
       return json(res, 200, { ok: true, note: 'Other admin sessions have been logged out. It lasts until the server restarts; set ADMIN_PASSWORD on your host to keep it.' });
     }
+    case '/api/admin/signup': auth.setSignup(body.open); return json(res, 200, { ok: true, open: auth.state.signupOpen });
     case '/api/admin/code': {
       const r = auth.createCode(body.player, body.name);
       return r.error ? json(res, 400, r) : json(res, 201, r);
@@ -182,7 +192,7 @@ async function api(req, res, p, ip, sess) {
     case '/api/admin/revoke':
     case '/api/admin/restore': {
       const n = Number(body.player);
-      if (!Number.isInteger(n) || n < 1 || n > 999) return json(res, 400, { error: 'Unknown player number.' });
+      if (!Number.isInteger(n) || n < 1 || n > 999999) return json(res, 400, { error: 'Unknown player number.' });
       if (p === '/api/admin/revoke') {
         auth.revoke(n);
         for (const pl of onlinePlayers()) if (pl.player === n) pl.ws.close(4003, 'Revoked');

@@ -19,3 +19,5 @@ services:
         sync: false
       - key: REVOKED_PLAYERS    # optional: player numbers blocked for good, e.g. "7,12"
         sync: false
+      - key: ALLOW_SIGNUP       # "0" closes self sign-up at every start; anything else leaves it open
+        value: "1"

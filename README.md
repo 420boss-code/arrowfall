@@ -48,6 +48,7 @@ Thousands of trees are drawn at once, so these limits matter; they're in `config
 The maths page is public. Typing **1+1** asks for a code, and the server sends nothing else (the game itself, the tree models, the server list and multiplayer) without a login.
 
 - **Players** each have their own 8-digit **player code**: 3 digits of player number (001–999) and a 5-digit check, e.g. `007 70397`. Codes are calculated from the secret `CODE_SECRET` rather than stored, so they keep working on hosts whose disk is wiped on restart. The same number always gives the same code; changing `CODE_SECRET` changes every code.
+- **Anyone can make their own code:** the login card has a **New here? Get your own code** button. Self-made codes are 11 digits (a 6-digit player number plus the 5-digit check, e.g. `473040 71934`), and the new player is logged straight in. Each address can make 3 codes an hour, with at most 60 an hour overall. While the server runs, every number is different. After a restart, a repeat is very unlikely but possible, because nothing is stored. The admin can switch sign-up off in the admin panel; setting `ALLOW_SIGNUP=0` keeps it closed at every start.
 - **The admin** logs in with the admin password: a 5-letter word and 2 digits, e.g. `otter58`. This adds an **Admin panel** to the start and pause menus, where the admin can:
   - **Create player codes:** pick a number (the next free one is suggested) and an optional name, then hand the code to that player.
   - **Revoke or restore a code:** revoking logs that player out at once.
@@ -64,6 +65,7 @@ The maths page is public. Typing **1+1** asks for a code, and the server sends n
 | `ADMIN_PASSWORD` | The admin password (5 letters + 2 digits) |
 | `CODE_SECRET` | Long random secret that player codes are calculated from. Keep it private. |
 | `REVOKED_PLAYERS` | Optional: player numbers blocked for good, e.g. `7,12` |
+| `ALLOW_SIGNUP` | `0` closes self sign-up at every start; otherwise it starts open |
 | `DATA_DIR` | Optional: where admin-panel changes are saved |
 
 Changes made in the admin panel (names, revocations, factions, admin password) are saved to `data/auth.json`, which Render's free tier wipes on every restart. Player codes themselves are never lost. For a block that must survive restarts, add the number to `REVOKED_PLAYERS`.

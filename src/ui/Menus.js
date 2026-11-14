@@ -48,6 +48,9 @@ export class Menus {
     $('admRefresh').addEventListener('click', () => this.refreshAdmin());
     $('admAdminBtn').addEventListener('click', () => this.changePassword('admin', 'admAdmin'));
     $('admCodeBtn').addEventListener('click', () => this.createCode());
+    $('admSignup').addEventListener('change', async (e) => {
+      try { const r = await this._admin('/api/admin/signup', { open: e.target.checked }); this.admStatus(r.open ? 'Anyone can now make a code.' : 'Sign-up closed: only you can make codes.'); } catch (err) { this.admStatus(err.message, true); }
+    });
     $('admFAdd').addEventListener('click', () => this.addFaction());
     $('btnMenu').addEventListener('click', () => game.quitToMenu());
   }
@@ -109,8 +112,9 @@ export class Menus {
       $('admPlayers').innerHTML = st.players.length ? st.players.map((p) => item(
         `<span class="grow">${escapeHtml(p.name)}${p.faction ? ` <small>[${escapeHtml(p.faction)}]</small>` : ''} <small>· ${p.player ? num(p.player) : 'admin'} · ${escapeHtml(p.room)}</small></span><button class="secondary" data-kick="${escapeHtml(p.key)}">Kick</button>${p.player ? `<button data-ban="${escapeHtml(p.key)}">Ban</button>` : ''}`)).join('') : '<div class="empty">Nobody is in an online game right now.</div>';
       if (!$('admNum').value && st.nextNumber) $('admNum').value = st.nextNumber;
+      $('admSignup').checked = !!st.signupOpen;
       $('admCodes').innerHTML = st.codes.length ? st.codes.map((c) => item(
-        `<span class="grow">${num(c.player)} ${escapeHtml(c.name || '')} <code>${c.code.slice(0, 3)} ${c.code.slice(3)}</code>${c.revoked ? ` <small class="revoked">${c.permanent ? 'blocked (REVOKED_PLAYERS)' : 'revoked'}</small>` : ''}</span>` +
+        `<span class="grow">${num(c.player)} ${escapeHtml(c.name || '')} <code>${c.code.length === 8 ? `${c.code.slice(0, 3)} ${c.code.slice(3)}` : `${c.code.slice(0, 6)} ${c.code.slice(6)}`}</code>${c.revoked ? ` <small class="revoked">${c.permanent ? 'blocked (REVOKED_PLAYERS)' : 'revoked'}</small>` : ''}</span>` +
         (c.permanent ? '' : c.revoked ? `<button class="secondary" data-restore="${c.player}">Restore</button>` : `<button data-revoke="${c.player}">Revoke</button>`))).join('') : '<div class="empty">No player codes created yet.</div>';
       $('admBans').innerHTML = st.bans.length ? st.bans.map((b) => item(
         `<span class="grow">${escapeHtml(b.name)} <small>· ${escapeHtml(b.ip)} · ${escapeHtml(b.at.slice(0, 10))}</small></span><button class="secondary" data-unban="${escapeHtml(b.id)}">Unban</button>`)).join('') : '<div class="empty">No bans.</div>';

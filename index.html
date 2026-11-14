@@ -54,12 +54,28 @@
     <div id="nwLogin" class="nw-login" hidden>
       <form id="nwLoginForm" class="nw-login-card" autocomplete="off">
         <h3>Members' area</h3>
-        <p>Enter your 8-digit player code.</p>
+        <p>Enter your player code.</p>
         <input id="nwPass" type="password" aria-label="Player code" autocomplete="current-password" placeholder="e.g. 007 31415" />
         <button>Continue</button>
         <p id="nwLoginErr" class="nw-login-err"></p>
+        <button type="button" id="nwSignupShow" class="nw-link" hidden>New here? Get your own code</button>
         <button type="button" id="nwLoginCancel" class="nw-link">Back to the solver</button>
       </form>
+      <form id="nwSignupForm" class="nw-login-card" autocomplete="off" hidden>
+        <h3>Get your own code</h3>
+        <p>Pick a name if you like. You'll get a player code to use every time you come back.</p>
+        <input id="nwSignupName" maxlength="24" placeholder="Your name (optional)" aria-label="Your name" />
+        <button>Get my code</button>
+        <p id="nwSignupErr" class="nw-login-err"></p>
+        <button type="button" id="nwSignupBack" class="nw-link">I already have a code</button>
+      </form>
+      <div id="nwCodeCard" class="nw-login-card" hidden>
+        <h3>Your player code</h3>
+        <p class="nw-code" id="nwCodeShow"></p>
+        <p>Write it down or save it somewhere safe. You need it to log in next time, and it can't be shown again.</p>
+        <button type="button" id="nwCodeCopy" class="nw-link">Copy code</button>
+        <button type="button" id="nwCodeGo">Continue</button>
+      </div>
     </div>
 
     <footer class="nw-foot">Numberwell · free maths practice · no sign-up, no adverts</footer>
@@ -155,6 +171,7 @@
       <h3>Passwords</h3>
       <div class="row"><label>New admin password</label><input id="admAdmin" type="password" autocomplete="new-password" placeholder="5 letters + 2 digits, e.g. otter58" /><button id="admAdminBtn" class="secondary small">Change</button></div>
       <h3>Player codes</h3>
+      <div class="row"><label for="admSignup">Anyone can make a code</label><input type="checkbox" id="admSignup" /></div>
       <div class="row"><label>Player number</label><input id="admNum" type="number" min="1" max="999" class="tag" /><input id="admNumName" placeholder="Name (optional)" maxlength="24" /><button id="admCodeBtn" class="secondary small">Create code</button></div>
       <div id="admNewCode" class="newcode" hidden></div>
       <div id="admCodes" class="admList"></div>
