@@ -229,7 +229,7 @@ function endQuiz() {
   quiz = null;
   const total = finished.kind === 'timed' ? finished.answered : finished.total;
   const percent = total ? Math.round(finished.score / total * 100) : 0;
-  quizSummary = `Quiz complete · ${finished.score}/${total} correct (${percent}%)`;
+  quizSummary = total ? `Quiz complete · ${finished.score}/${total} correct (${percent}%)` : 'Challenge over · no answers yet';
   $('nwQuizStatus').textContent = quizSummary;
   $('nwFeedback').textContent = quizSummary;
   $('nwFeedback').className = 'nw-feedback good';
@@ -322,9 +322,10 @@ nextQuestion();
 
 // Live percentage tool
 function updatePercentTool() {
-  const rate = Number($('pctRate').value), amount = Number($('pctAmount').value), action = $('pctAction').value;
+  const rateText = $('pctRate').value.trim(), amountText = $('pctAmount').value.trim();
+  const rate = Number(rateText), amount = Number(amountText), action = $('pctAction').value;
   const out = $('pctResult');
-  if (!Number.isFinite(rate) || !Number.isFinite(amount)) { out.textContent = 'Enter valid numbers to see the result.'; return; }
+  if (!rateText || !amountText || !Number.isFinite(rate) || !Number.isFinite(amount)) { out.textContent = 'Enter valid numbers to see the result.'; return; }
   let result, formula;
   if (action === 'of') { result = amount * rate / 100; formula = `${rate}% × ${amount}`; }
   else if (action === 'increase') { result = amount * (1 + rate / 100); formula = `${amount} × (1 + ${rate}/100)`; }
