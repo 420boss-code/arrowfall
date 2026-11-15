@@ -205,3 +205,6 @@ button.market { background: linear-gradient(90deg, #6b4fd6, #b0548f); color: #ff
 #invHint { font-size: 12px; opacity: .65; margin-top: 6px; }
 #invHint:empty { display: none; }
 @keyframes invIn { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+#spectateHint { display: none; position: absolute; top: 82px; left: 50%; transform: translateX(-50%); max-width: min(760px, calc(100vw - 28px)); box-sizing: border-box; padding: 8px 12px; border: 1px solid rgba(255,255,255,.16); border-radius: 8px; background: rgba(10,13,18,.78); color: #f3f3ee; font-size: 12px; line-height: 1.5; text-align: center; }
+#spectateHint.on { display: block; }
