@@ -142,7 +142,7 @@ export class HUD {
     if (this.dmgTimer > 0) {
       this.dmgTimer -= dt;
       const a = clamp(this.dmgTimer / 0.6, 0, 1);
-      this.el.vignette.style.boxShadow = `inset 0 0 160px rgba(200,0,0,${0.55 * a})`;
+      this.el.vignette.style.boxShadow = `inset 0 0 160px rgba(200,0,0,${0.75 * a})`;
       if (this.dmgFrom) {
         const dx = this.dmgFrom.x - p.pos.x, dz = this.dmgFrom.z - p.pos.z;
         const ang = Math.atan2(-dx, -dz) - p.yaw;
