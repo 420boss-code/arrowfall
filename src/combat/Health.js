@@ -55,14 +55,14 @@ export class Health {
         if (a.bandageT >= H.bandageTime || a.hp >= H.max) this.stopBandage(a);
       }
       // resupply: standing near your own spawn point slowly refills the quiver
-      if (a.homeX !== undefined && a.arrows < CONFIG.archer.quiver) {
+      if (a.homeX !== undefined && a.arrows < CONFIG.archer.quiver + a.mods.quiver) {
         const dx = a.pos.x - a.homeX, dz = a.pos.z - a.homeZ;
         if (dx * dx + dz * dz < H.resupplyRadius * H.resupplyRadius) {
           a._resupply = (a._resupply || 0) + dt;
           if (a._resupply >= H.resupplyEvery) { a._resupply = 0; a.arrows++; }
         } else a._resupply = 0;
       }
-      a.regenerating = !a.bandaging && a.hp < H.max && g.time - a.lastHurt > H.regenDelay;
+      a.regenerating = !a.bandaging && a.hp < H.max && g.time - a.lastHurt > H.regenDelay + a.mods.regenDelay;
       if (a.regenerating) this.heal(a, H.regenRate * dt);
       // herbs: walk over one while hurt to eat it
       if (a.hp < H.max) {
@@ -81,7 +81,7 @@ export class Health {
   takeHerb(h, a) {
     h.ready = false;
     h.readyAt = this.game.time + H.herbRegrow;
-    this.heal(a, H.herbHeal);
+    this.heal(a, H.herbHeal * a.mods.herb);
     a.pickupT = 0.6;
     if (a.isPlayer) this.game.audio.heal();
     this.game.emit({ t: 'herb', h: h.idx, a: 0, i: a.idx });

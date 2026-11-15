@@ -108,6 +108,25 @@ From the game's start menu choose **Play online – servers and parties**:
 - **Parties:** under **Start a game**, leave "Who can join" on **Party**, pick the match size, mode, bot difficulty and friendly fire, and choose **Create party**. You get a five-letter **party code** to send to friends; they enter it under **Join a party**. The code also shows in the Esc menu while you play. Parties are never listed publicly. Choose **Public** instead to make a listed server. Empty player-made games close after two minutes.
 - **Bots:** with **Fill empty places with bots** ticked, bots take every place a human isn't in, so the match is always full. Joining takes over a living bot; leaving hands the archer back. Untick it for people only: the match waits until there is someone on each side (or two people in a free-for-all) and grows as friends arrive.
 
+## Marketplace
+
+**Marketplace** on the start menu sells six items each week. The stock changes every Monday at 00:00 UTC, is the same for everyone (it is picked by a generator seeded with the week number), and one item each week is a 30% deal. There are 35 items in all, so things come back round in later weeks.
+
+- **Cosmetics**, seen by everyone, online too: bow finishes, hood colours, knife finishes, arrow trails (sparkles behind every arrow you shoot) and kill effects (the colour of the burst when you take someone down). Common 150, rare 300, epic 500 silver.
+- **Perks**: one equipped at a time, 500–900 silver:
+  - Deep Quiver: 6 more arrows at the start of each life, and 6 more carried.
+  - Field Medic: 3 bandages a life instead of 2.
+  - Fleet Foot: 5% faster.
+  - Iron Lungs: 20% more stamina.
+  - Steady Hands: full draw in 0.9 s instead of 1 s.
+  - Herbalist: herbs heal 60 instead of 40.
+  - Quick Blade: stab again 25% sooner.
+  - Second Wind: natural healing starts after 4 s instead of 6.
+- **Silver** is earned in every match, offline or online: 2 for a hit, 20 for a takedown (+10 with the knife), 10 for surviving a round, 30 for a round win, 75 more for winning the match, 100 for winning a free-for-all. New players start with 250. A small "+20 ◆" shows as you earn, and the round screen shows the total.
+- **Your kit** (in the same panel) lets you choose what to wear from what you own; a purchase is equipped straight away.
+
+Silver and items are saved in the browser, like the settings, so they stay on that device and are not shared between devices. Because of that, they can be edited by anyone who knows how, and an online server accepts whichever perk a player says they have. The perks are kept small for that reason. The marketplace data is in `src/core/items.js`.
+
 ## Friends
 
 Everyone with a player code has a **player number** (shown in the start menu and in the Friends panel). It is not the login code, so it is safe to share.

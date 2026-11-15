@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { clamp, lerp, wrapAngle } from '../core/utils.js';
 import { arrowGeometry } from '../combat/Projectiles.js';
+import { COSMETICS } from '../core/items.js';
 
 const C = CONFIG.colours;
 const PARTS = ['hips', 'torso', 'head', 'hood', 'uArmL', 'fArmL', 'uArmR', 'fArmR', 'thighL', 'shinL', 'thighR', 'shinR',
@@ -39,6 +40,9 @@ const FLASH = new THREE.Color(1, 0.55, 0.5);
 const FP_HIDDEN = [1, 2, 3, 4, 5, 6, 7, 12, 13, 14, 15, 16]; // torso, head, hood, arms, quiver, string, arrow, belt
 const TEAM_PARTS = new Set(['torso', 'hood', 'uArmL', 'uArmR']), DARK_PARTS = new Set(['hips', 'thighL', 'thighR']);
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
+const BOW_WOOD = new THREE.Color(0x6b4423), WHITE = new THREE.Color(1, 1, 1);
+const HOOD = PARTS.indexOf('hood'), TORSO = PARTS.indexOf('torso');
+const _cc = new THREE.Color();
 
 export function bowGeometry() {
   // A recurve-ish arc along local Y, belly toward -Z, tips at ±0.62 Y.
@@ -68,7 +72,8 @@ export class ArcherRenderer {
     this.boxes.castShadow = true;
     this.boxes.receiveShadow = true;
     this.boxes.frustumCulled = false;
-    this.bows = new THREE.InstancedMesh(bowGeometry(), new THREE.MeshLambertMaterial({ color: 0x6b4423 }), this.max);
+    this.bows = new THREE.InstancedMesh(bowGeometry(), new THREE.MeshLambertMaterial({ color: 0xffffff }), this.max);
+    for (let i = 0; i < this.max; i++) this.bows.setColorAt(i, BOW_WOOD);
     this.bows.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.bows.castShadow = true;
     this.bows.frustumCulled = false;
@@ -78,6 +83,7 @@ export class ArcherRenderer {
     const mk = (geo) => { const m = new THREE.InstancedMesh(geo, vc(), this.max); m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.castShadow = true; m.frustumCulled = false; return m; };
     this.knives = mk(props ? props.knife : new THREE.BoxGeometry(0.02, 0.03, 0.25).setAttribute('color', new THREE.Float32BufferAttribute(new Array(72).fill(0.6), 3)));
     this.quivers = mk(props ? props.quiver : new THREE.BoxGeometry(0.2, 1, 0.2).translate(0, 0.5, 0).setAttribute('color', new THREE.Float32BufferAttribute(new Array(72).fill(0.4), 3)));
+    for (let i = 0; i < this.max; i++) this.knives.setColorAt(i, WHITE);
     this.handArrows = mk(arrowGeometry());
     this.handArrows.castShadow = false;
     scene.add(this.boxes, this.bows, this.knives, this.quivers, this.handArrows);
@@ -116,6 +122,20 @@ export class ArcherRenderer {
       this.boxes.setColorAt(i * NP + k, base[k]);
     });
     this.boxes.instanceColor.needsUpdate = true;
+    this.archers[i]._cosKey = null;
+  }
+
+  // Marketplace cosmetics: bow wood, hood colour and knife tint.
+  _applyCos(i, a) {
+    const cos = a.cos || {};
+    const bow = COSMETICS[cos.bow], hood = COSMETICS[cos.hood], knife = COSMETICS[cos.knife];
+    this.bows.setColorAt(i, bow ? _cc.set(bow.colour) : BOW_WOOD);
+    this.bows.instanceColor.needsUpdate = true;
+    this.knives.setColorAt(i, knife ? _cc.setRGB(...knife.tint) : WHITE);
+    this.knives.instanceColor.needsUpdate = true;
+    const base = this.baseColours[i];
+    base[HOOD].copy(hood ? _cc.set(hood.colour) : base[TORSO]);
+    if (!a._flashing) { this.boxes.setColorAt(i * NP + HOOD, base[HOOD]); this.boxes.instanceColor.needsUpdate = true; }
   }
 
   // Box stretched between local points a and b, with a reference "forward" axis for orientation.
@@ -214,6 +234,8 @@ export class ArcherRenderer {
       return;
     }
     a._hidden = false;
+    const cosKey = a.cos ? `${a.cos.bow}|${a.cos.hood}|${a.cos.knife}` : '';
+    if (a._cosKey !== cosKey) { a._cosKey = cosKey; this._applyCos(i, a); }
     const T = this.clock;
     const alive = a.alive;
     const spd = alive ? a.speed : 0;

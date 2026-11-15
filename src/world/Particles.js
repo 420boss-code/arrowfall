@@ -3,6 +3,7 @@
 //   shard – small square flecks: torn cloth that tumbles, lands and fades
 // Used for the death "poof". Every particle lives in fixed typed arrays; nothing is allocated per effect.
 import * as THREE from 'three';
+import { COSMETICS } from '../core/items.js';
 
 const VERT = `
   attribute float size;
@@ -136,7 +137,7 @@ export class Particles {
   }
 
   // The death poof: smoke billowing from the body, team-coloured scraps, rising motes, then dust on landing.
-  death(a, big = false, skipSmoke = false) {
+  death(a, big = false, skipSmoke = false, killFx = null) {
     const g = this.game;
     const x = a.pos.x, y = a.pos.y, z = a.pos.z, h = a.height;
     const rnd = (s) => (Math.random() - 0.5) * s;
@@ -149,15 +150,20 @@ export class Particles {
       }
     }
     const team = a.colour !== undefined ? new THREE.Color(a.colour) : TEAM[a.team] || TEAM.blue;
-    for (let k = 0; k < 16 * n; k++) {
-      const c = Math.random() < 0.75 ? team : new THREE.Color(0x5a3b22);
+    // the killer's marketplace kill effect recolours the burst
+    const fxItem = killFx && COSMETICS[killFx] && COSMETICS[killFx].cat === 'fx' ? COSMETICS[killFx] : null;
+    const fxCol = fxItem ? new THREE.Color(fxItem.colour) : null;
+    const fxColour = () => (fxItem.rainbow ? new THREE.Color().setHSL(Math.random(), 0.9, 0.6) : fxCol);
+    for (let k = 0; k < 16 * n * (fxItem ? 1.5 : 1); k++) {
+      const c = fxItem ? (Math.random() < 0.7 ? fxColour() : team) : Math.random() < 0.75 ? team : new THREE.Color(0x5a3b22);
       const s = 0.7 + Math.random() * 0.5;
       this.shard.spawn(x + rnd(0.4), y + 0.6 + Math.random() * 0.9, z + rnd(0.4), rnd(5), 2 + Math.random() * 3.5, rnd(5),
         { size: 0.07 + Math.random() * 0.06, life: 3 + Math.random() * 1.5, grav: 0.55, drag: 1.6, r: c.r * s, gg: c.g * s, b: c.b * s, ground: 1 });
     }
     for (let k = 0; k < 10 * n; k++) {
       this.glow.spawn(x + rnd(0.5), y + 0.5 + Math.random() * 1.2, z + rnd(0.5), rnd(0.4), 0.6 + Math.random() * 0.8, rnd(0.4),
-        { size: 0.09 + Math.random() * 0.07, life: 1.6 + Math.random() * 1.2, grav: -0.02, drag: 0.6, alpha: 0.9, r: 1, gg: 0.82, b: 0.45 });
+        fxItem ? (() => { const g2 = fxColour(); return { size: 0.11 + Math.random() * 0.08, life: 1.8 + Math.random() * 1.2, grav: -0.02, drag: 0.6, alpha: 0.95, r: Math.min(1, g2.r * 1.2), gg: Math.min(1, g2.g * 1.2), b: Math.min(1, g2.b * 1.2) }; })()
+          : { size: 0.09 + Math.random() * 0.07, life: 1.6 + Math.random() * 1.2, grav: -0.02, drag: 0.6, alpha: 0.9, r: 1, gg: 0.82, b: 0.45 });
     }
     // dust where the body hits the ground, as the fall finishes
     const fx = -Math.sin(a.yaw) * -a.deathDir, fz = -Math.cos(a.yaw) * -a.deathDir;

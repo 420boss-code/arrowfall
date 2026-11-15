@@ -26,6 +26,7 @@ import { Minimap } from '../ui/Minimap.js';
 import { Menus } from '../ui/Menus.js';
 import { loadSettings, applySettings } from '../ui/Settings.js';
 import { propGeometries } from '../world/propModels.js';
+import { Market, EARN } from '../ui/Market.js';
 import { HEADER, STRIDE, FL, ZONE, CLIENT_RATE, vec3 } from '../net/protocol.js';
 
 const R = CONFIG.rules;
@@ -108,6 +109,7 @@ export class Game {
       this.minimap = new Minimap(document.getElementById('minimap'), this);
       this.overlay = new WorldOverlay(this);
       this.particles = new Particles(this);
+      this.market = new Market(this);
       this.menus = new Menus(this);
     } else {
       this.audio = this.input = this.hud = this.minimap = this.menus = this.overlay = this.particles = NOOP;
@@ -256,8 +258,10 @@ export class Game {
     if (!this.headless) {
       this.role = 'offline';
       if (this.net) { this.net.close(); this.net = null; }
-      for (const a of this.archers) { a.name = a.botName; a.human = false; a.remote = false; }
+      for (const a of this.archers) { a.name = a.botName; a.human = false; a.remote = false; a.setLoadout(null); }
       this.setLocalArcher(this.teams.blue[0]);
+      // your marketplace kit: cosmetics and one perk
+      if (this.market) { this.me.setLoadout(this.market.loadout()); this.market.matchEarned = 0; }
       this._applyLocalOptions(opts);
     }
     for (const a of this.archers) a.stats = emptyStats();
@@ -379,8 +383,11 @@ export class Game {
   // ------------------------------------------------------------------ events and queries
   onKill(victim, killer, headshot, weapon = 'bow') {
     this.hud.killFeed(killer, victim, headshot, weapon);
+    if (this.market && killer && killer === this.me && this.isEnemy(killer, victim)) {
+      this.market.earn(EARN.kill + (weapon === 'knife' ? EARN.knifeKill : 0), weapon === 'knife' ? 'knife takedown' : 'takedown');
+    }
     // death poof (no smoke over your own first-person view)
-    if (CONFIG.graphics.deathParticles && this.settings.deathParticles !== false) this.particles.death(victim, headshot, victim.isPlayer && this.player && this.player.firstPerson);
+    if (CONFIG.graphics.deathParticles && this.settings.deathParticles !== false) this.particles.death(victim, headshot, victim.isPlayer && this.player && this.player.firstPerson, killer && killer.cos ? killer.cos.fx : null);
     if (victim.isPlayer && this.player) {
       this.audio.stopDraw();
       this.hud.deathRecap(victim, killer);
@@ -392,6 +399,7 @@ export class Game {
 
   // Damage numbers, enemy health bars and camera shake for whoever is watching.
   onHitFeedback(victim, shooter, dmg, crit) {
+    if (this.market && shooter && shooter === this.me && victim !== shooter && this.isEnemy(shooter, victim) && dmg > 0) this.market.earn(EARN.hit);
     if (!this.player) return;
     if (shooter && shooter.isPlayer) { if (this.settings.damageNumbers !== false) this.overlay.damageNumber(victim, dmg, crit); victim.lastHitByMe = this.time; }
     if (victim.isPlayer) this.player.shake = Math.min(1, this.player.shake + 0.35 + dmg / 120);
@@ -453,7 +461,7 @@ export class Game {
       if (archer === this.me && archer.alive) { this.net.send({ t: 'pickup' }); this.lastPickupReq = this.time; }
       return 0;
     }
-    const space = A.maxArrows - archer.arrows;
+    const space = A.maxArrows + archer.mods.quiver - archer.arrows;
     if (space <= 0) return 0;
     let n = this.projectiles.collect(archer, A.pickupRadius, space);
     const corpse = this.nearestLootableCorpse(archer, A.pickupRadius);
@@ -565,6 +573,7 @@ export class Game {
   _roundEndCommon(timeout) {
     this.roundOver = true;
     this.roundEndTimer = 3;
+    this._roundSilver();
     if (this.ffa) {
       const w = typeof this.roundWinner === 'number' ? this.archers[this.roundWinner] : null;
       for (const a of this.archers) a.cheer = a === w && a.alive;
@@ -574,6 +583,17 @@ export class Game {
     for (const a of this.archers) a.cheer = !!this.roundWinner && a.alive && a.team === this.roundWinner;
     const name = this.roundWinner === 'blue' ? 'Blue' : this.roundWinner === 'red' ? 'Red' : null;
     this.hud.centre(name ? `${name} ${this.matchOver ? 'wins the match' : 'take the round'}${timeout ? ' on time' : ''}` : 'Round drawn', 3);
+  }
+
+  // Silver for how the round went (offline, and online from the server's round-end event).
+  _roundSilver() {
+    const me = this.me;
+    if (!this.market || !me || !me.active) return;
+    let n = 0;
+    if (me.alive) n += EARN.survive;
+    if (this.ffa) { if (typeof this.roundWinner === 'number' && this.archers[this.roundWinner] === me) n += EARN.ffaWin; }
+    else if (this.roundWinner === me.team) n += EARN.roundWin + (this.matchOver ? EARN.matchWin : 0);
+    if (n) this.market.earn(n, this.ffa ? (n > EARN.survive ? 'victory' : 'survived') : this.roundWinner === me.team ? (this.matchOver ? 'match won' : 'round won') : 'survived');
   }
 
   _showRoundScreen() {
@@ -681,6 +701,7 @@ export class Game {
   // ------------------------------------------------------------------ networking: client side
   startOnline(net, w, opts) {
     this.net = net;
+    if (this.market) this.market.matchEarned = 0;
     this.role = 'client';
     this.opts = opts;
     this._applyLocalOptions(opts);
@@ -719,9 +740,10 @@ export class Game {
   }
 
   _applyRoster(list) {
-    for (const [i, name, human, active] of list) {
+    for (const [i, name, human, active, kit] of list) {
       const a = this.archers[i];
       a.human = !!human;
+      a.setLoadout(human ? kit : null);
       a.name = human ? name : a.botName;
       if (active !== undefined && !!active !== a.active) {
         a.active = !!active;
@@ -866,7 +888,7 @@ export class Game {
         const a = this.archers[e.i];
         const n = this.projectiles.collect({ pos: new THREE.Vector3(e.p[0], e.p[1], e.p[2]) }, A.pickupRadius, e.n);
         if (a) a.pickupT = 0.6;
-        if (a === me && e.n > 0) { this.audio.pickup(); this.lastPickupReq = -99; a.arrows = Math.min(A.maxArrows, a.arrows + e.n); }
+        if (a === me && e.n > 0) { this.audio.pickup(); this.lastPickupReq = -99; a.arrows = Math.min(A.maxArrows + a.mods.quiver, a.arrows + e.n); }
         break;
       }
       case 'herb': {

@@ -7,7 +7,7 @@ import { buildSettingsPanel, resetSettings } from './Settings.js';
 const $ = (id) => document.getElementById(id);
 const MODE_NAMES = { tdm: 'Team Deathmatch', kotf: 'King of the Field' };
 const DIFF_NAMES = { easy: 'Easy', normal: 'Normal', hard: 'Hard' };
-const OVERLAYS = ['startMenu', 'serverMenu', 'pauseMenu', 'roundMenu', 'loading', 'adminMenu', 'settingsMenu', 'friendsMenu'];
+const OVERLAYS = ['startMenu', 'serverMenu', 'pauseMenu', 'roundMenu', 'loading', 'adminMenu', 'settingsMenu', 'friendsMenu', 'marketMenu'];
 const FRIENDS_KEY = 'arrowfall-friends';
 
 function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch { return null; } return null; }
@@ -46,6 +46,9 @@ export class Menus {
     $('btnOnline').addEventListener('click', () => this.showServers());
     $('btnSettings').addEventListener('click', () => this.showSettings('startMenu'));
     $('btnFriends').addEventListener('click', () => this.showFriends('startMenu'));
+    $('btnMarket').addEventListener('click', () => { $('mkStatus').textContent = ''; game.market.render(); this._openPanel('marketMenu', 'startMenu'); });
+    $('mkBack').addEventListener('click', () => this.closePanel('marketMenu'));
+    game.market._badge();
 
     // ---- online menu
     $('btnBack').addEventListener('click', () => this.showStart());
@@ -425,7 +428,7 @@ export class Menus {
     try {
       const faction = $('playerFaction').value;
       store('arrowfall-faction', faction);
-      const welcome = await net.connect(roomId, name, faction || null);
+      const welcome = await net.connect(roomId, name, faction || null, this.game.market ? this.game.market.loadout() : null);
       this.currentRoom = welcome.room;
       this._syncPause({ friendlyFire: welcome.match && welcome.match.ff });
       if (this.game.settings.fullscreen) this._fullscreen();
@@ -455,6 +458,8 @@ export class Menus {
     $('roundTable').innerHTML = info.tables;
     $('btnNext').classList.toggle('hidden', !!info.online);
     $('btnNext').textContent = info.matchOver ? 'Play again' : 'Next round';
+    const m = this.game.market;
+    $('roundSilver').innerHTML = m && m.matchEarned ? `◆ ${m.matchEarned} silver earned ${info.online ? "since you joined" : "this match"} · balance ${m.wallet.silver}` : '';
     $('roundWait').textContent = info.online ? (info.matchOver ? 'A new match starts shortly…' : 'The next round starts shortly…') : '';
     $('btnMenu').textContent = info.online ? 'Leave server' : 'Main menu';
     $('roundMenu').classList.remove('hidden');

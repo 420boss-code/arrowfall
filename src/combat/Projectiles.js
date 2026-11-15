@@ -2,6 +2,7 @@
 // sticking into trees, rocks, ground and bodies, and pick-up of spent arrows.
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
+import { COSMETICS } from '../core/items.js';
 import { segmentSphere, segmentVerticalCapsule } from '../core/utils.js';
 import { mergeSimple } from '../world/Terrain.js';
 
@@ -140,7 +141,11 @@ export class Projectiles {
       a.vel.multiplyScalar(drag);
       a.vel.y -= g * dt;
       _b.copy(a.pos).addScaledVector(a.vel, dt);
-      if (a.crit && this.trail) this.trail.emit(a.pos, dt);
+      if (this.trail) {
+        // critical arrows sparkle; a marketplace trail colours every arrow its owner shoots
+        const tc = a.owner && a.owner.cos && a.owner.cos.trail ? COSMETICS[a.owner.cos.trail] : null;
+        if (a.crit || tc) this.trail.emit(a.pos, dt, tc ? tc.rgb : null);
+      }
       let bestT = 2, kind = null, target = null, headshot = false;
 
       // archers
@@ -325,6 +330,7 @@ class CritTrail {
     this.pos = new Float32Array(max * 3);
     this.col = new Float32Array(max * 3);
     this.life = new Float32Array(max);
+    this.base = new Float32Array(max * 3);
     this.next = 0;
     this.acc = 0;
     const g = new THREE.BufferGeometry();
@@ -339,9 +345,10 @@ class CritTrail {
     scene.add(this.points);
   }
 
-  emit(p, dt) {
+  emit(p, dt, rgb = null) {
     for (let k = 0; k < 2; k++) {
       const i = this.next;
+      this.base[i * 3] = rgb ? rgb[0] : 0.75; this.base[i * 3 + 1] = rgb ? rgb[1] : 0.9; this.base[i * 3 + 2] = rgb ? rgb[2] : 1.0;
       this.next = (this.next + 1) % this.max;
       this.pos[i * 3] = p.x + (Math.random() - 0.5) * 0.12;
       this.pos[i * 3 + 1] = p.y + (Math.random() - 0.5) * 0.12;
@@ -360,8 +367,8 @@ class CritTrail {
       const t = Math.max(0, this.life[i] / 0.45);
       if (t <= 0) this.pos[i * 3 + 1] = -999;
       this.pos[i * 3 + 1] -= dt * 0.3;
-      // pale cyan-white sparkle fading out
-      this.col[i * 3] = 0.75 * t; this.col[i * 3 + 1] = 0.9 * t; this.col[i * 3 + 2] = 1.0 * t;
+      // pale cyan-white sparkle (or the owner's trail colour) fading out
+      this.col[i * 3] = this.base[i * 3] * t; this.col[i * 3 + 1] = this.base[i * 3 + 1] * t; this.col[i * 3 + 2] = this.base[i * 3 + 2] * t;
       any = true;
     }
     this.active = any;

@@ -127,7 +127,7 @@ export class Combat {
   stab(a) {
     if (!a.alive || a.stabCooldown > 0 || a.bandaging) return false;
     a.stabT = K.time;
-    a.stabCooldown = K.cooldown;
+    a.stabCooldown = K.cooldown * a.mods.knifeCd;
     a.stabPending = this.game.role !== 'client';
     if (a.drawing) { a.drawing = false; a.drawTime = 0; a.fullDrawHeld = 0; if (a.isPlayer) this.game.audio.stopDraw(); }
     this.game.audio.swish(a.pos, a.isPlayer);

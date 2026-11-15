@@ -26,6 +26,7 @@
       <div class="bar"><label>STA</label><div class="track"><div id="staFill" class="fill sta"></div></div></div>
       <div id="stance"></div>
     </div>
+    <div id="silverToast"></div>
     <div id="ammo"><span class="quiverIcon">➶</span> <b id="arrowCount">30</b></div>
     <div id="viewHint">F – knife · C – crouch · V – view · Tab – scores · Esc – pause</div>
     <div id="perf" class="hidden"></div>
@@ -47,6 +48,7 @@
       <div class="row"><label>Friendly fire</label><input type="checkbox" id="optFF" /></div>
       <button id="btnStart">Play offline</button>
       <button id="btnOnline" class="online">Play online – servers and parties</button>
+      <button id="btnMarket" class="market">Marketplace <span class="mkBadgeWrap">◆ <b id="mkBadge">0</b></span></button>
       <div class="btnRow"><button id="btnFriends" class="secondary">Friends</button><button id="btnSettings" class="secondary">Settings</button></div>
       <button id="btnAdmin" class="secondary hidden">Admin panel</button>
       <button id="btnLogout" class="secondary">Log out</button>
@@ -90,6 +92,22 @@
       <p id="guestCreateNote" class="note hidden">Guests can join servers and parties. To start your own, get a player code from the login screen.</p>
       <p id="netStatus" class="note"></p>
       <button id="btnBack" class="secondary">Back</button>
+    </div>
+  </div>
+
+  <div id="marketMenu" class="overlay menu hidden">
+    <div class="panel wide market">
+      <div class="mkHead"><h2>Marketplace</h2><div class="mkBal">◆ <b id="mkSilver">0</b> silver</div></div>
+      <p class="note">This week's stock. <span id="mkTimer"></span> Cosmetics change how you look to everyone; a perk is a small boost, and you can wear one at a time.</p>
+      <div id="mkStock" class="mkGrid"></div>
+      <p id="mkStatus" class="note"></p>
+      <h3>Your kit</h3>
+      <div id="mkKit"></div>
+      <h3>Earning silver</h3>
+      <p id="mkEarnList" class="note"></p>
+      <p id="mkTotals" class="note"></p>
+      <p class="note mkSmall">Your silver and items are saved in this browser, so they stay on this device.</p>
+      <button id="mkBack" class="secondary">Back</button>
     </div>
   </div>
 
@@ -156,6 +174,7 @@
       <p id="roundSub"></p>
       <div id="roundMvp"></div>
       <div id="roundTable"></div>
+      <p id="roundSilver" class="roundSilver"></p>
       <p id="roundWait" class="note"></p>
       <button id="btnNext">Next round</button>
       <button id="btnMenu" class="secondary">Main menu</button>

@@ -41,10 +41,10 @@ export class Room {
     for (const ws of this.clients.keys()) this._send(ws, s);
   }
 
-  _roster() { return this.game.archers.map((a) => [a.idx, a.name, a.human ? 1 : 0, a.active ? 1 : 0]); }
+  _roster() { return this.game.archers.map((a) => [a.idx, a.name, a.human ? 1 : 0, a.active ? 1 : 0, a.human ? { ...a.cos, ...(a.perk ? { perk: a.perk } : {}) } : 0]); }
   _stats() { return this.game.archers.map((a) => { const s = a.stats; return [s.kills, s.deaths, s.shots, s.hits, Math.round(s.damage), s.headshots]; }); }
 
-  join(ws, name, faction = null) {
+  join(ws, name, faction = null, kit = null) {
     const g = this.game;
     // the first arrival in a sleeping room gets a fresh match
     if (this.clients.size === 0) { g.startMatch(this.opts); g.events.length = 0; }
@@ -71,6 +71,7 @@ export class Room {
     slot.drawing = false;
     slot.drawTime = 0;
     slot.moveDir.set(0, 0);
+    slot.setLoadout(kit);          // marketplace kit: cosmetics everyone sees, and one perk
     this.clients.set(ws, { idx: slot.idx, name, faction });
     this._send(ws, {
       t: 'welcome',
@@ -99,6 +100,7 @@ export class Room {
     a.human = false;
     a.name = a.botName;
     a.drawing = false;
+    a.setLoadout(null);
     if (a.ai) a.ai.reset(); // a bot picks up where the human left off (or, with bots off, the slot empties)
     if (!this.game.layout.bots) this.game.refreshActive();
     if (this.clients.size === 0) this.emptySince = Date.now();

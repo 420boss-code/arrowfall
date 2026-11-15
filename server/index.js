@@ -318,7 +318,7 @@ wss.on('connection', (ws, req) => {
       const r = rooms.get(String(m.room || '').toUpperCase());
       if (!r) { ws.send(JSON.stringify({ t: 'error', msg: 'That server no longer exists.' })); return; }
       const faction = m.faction ? auth.faction(String(m.faction)) : null;
-      const err = r.join(ws, cleanName(m.name), faction);
+      const err = r.join(ws, cleanName(m.name), faction, m.kit);
       if (err) { ws.send(JSON.stringify({ t: 'error', msg: err })); return; }
       room = r;
       return;

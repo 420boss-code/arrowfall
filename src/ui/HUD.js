@@ -117,7 +117,7 @@ export class HUD {
       if (this.beat <= 0) { this.game.audio.heartbeat(); this.beat = 0.55 + (p.hp / H.lowHpWarning) * 0.5; }
     }
     this._set('hpt', this.el.hpText, 'text', String(Math.max(0, Math.ceil(p.hp))));
-    this._set('sta', this.el.sta, 'width', `${Math.round(p.stamina)}%`);
+    this._set('sta', this.el.sta, 'width', `${Math.round((p.stamina / (CONFIG.archer.stamina * p.mods.stamina)) * 100)}%`);
     this._set('arr', this.el.arrows, 'text', String(p.arrows));
     const stance = !p.alive ? '' : p.bandaging ? '✚ Bandaging – stay still' : p.hp < CONFIG.health.limpBelow ? '✚ Wounded – limping' : p.crouching ? '▾ Crouched · quiet' : p.sprinting ? '» Sprinting' : '';
     this._set('stance', this.el.stance, 'text', stance);

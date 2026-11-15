@@ -12,13 +12,13 @@ export class NetClient {
   }
 
   // Resolves with the server's welcome message once we have a slot in the room.
-  connect(roomId, name, faction = null) {
+  connect(roomId, name, faction = null, kit = null) {
     return new Promise((resolve, reject) => {
       let welcomed = false;
       const ws = new WebSocket(NetClient.url());
       ws.binaryType = 'arraybuffer';
       this.ws = ws;
-      ws.onopen = () => ws.send(JSON.stringify({ t: 'join', room: roomId, name, faction }));
+      ws.onopen = () => ws.send(JSON.stringify({ t: 'join', room: roomId, name, faction, kit }));
       ws.onmessage = (ev) => {
         if (typeof ev.data !== 'string') { this.game.applySnapshot(ev.data); return; }
         let m;

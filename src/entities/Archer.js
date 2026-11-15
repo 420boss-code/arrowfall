@@ -1,6 +1,7 @@
 // Shared archer state and movement physics, used by both the player and the AI.
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
+import { perkMods, PERKS, cleanLoadout } from '../core/items.js';
 import { clamp, lerp } from '../core/utils.js';
 
 const A = CONFIG.archer;
@@ -26,6 +27,9 @@ export class Archer {
     this.pitch = 0;             // aim pitch (radians, +up)
     this.stats = { kills: 0, deaths: 0, shots: 0, hits: 0, damage: 0, headshots: 0 };
     this.lastAttacker = null;
+    this.perk = null;
+    this.mods = perkMods(null);
+    this.cos = {};              // cosmetics: { bow, hood, knife, trail, fx } item ids
     this.reset(new THREE.Vector3());
   }
 
@@ -33,7 +37,7 @@ export class Archer {
     this.pos.copy(spawn);
     this.vel.set(0, 0, 0);
     this.hp = H.max;
-    this.bandages = H.bandages;
+    this.bandages = H.bandages + this.mods.bandages;
     this.bandaging = false;
     this.bandageT = 0;
     this.lastHurt = -99;       // game time of the last damage taken (regeneration waits after it)
@@ -45,8 +49,8 @@ export class Archer {
     this.pickupT = 0;
     this.cheer = false;
     this.deathStyle = 0;
-    this.arrows = A.quiver;
-    this.stamina = A.stamina;
+    this.arrows = A.quiver + this.mods.quiver;
+    this.stamina = A.stamina * this.mods.stamina;
     this.alive = true;
     this.deathTime = 0;
     this.onGround = true;
@@ -70,7 +74,16 @@ export class Archer {
     this.lastDamage = 0;
   }
 
-  get drawFrac() { return clamp(this.drawTime / B.fullDrawTime, 0, 1); }
+  get drawFrac() { return clamp(this.drawTime / (B.fullDrawTime * this.mods.draw), 0, 1); }
+
+  // Marketplace loadout: one perk (gameplay) and cosmetics (looks). Unknown ids are ignored.
+  setLoadout(l) {
+    const clean = cleanLoadout(l);
+    this.perk = clean.perk && PERKS[clean.perk] ? clean.perk : null;
+    this.mods = perkMods(this.perk);
+    const { perk, ...cos } = clean;
+    this.cos = cos;
+  }
   get eyeHeight() { return this.bandaging ? 1.0 : this.crouching ? 1.1 : 1.62; }
   get height() { return this.crouching || this.bandaging ? A.crouchHeight : A.height; }
 
@@ -104,6 +117,7 @@ export class Archer {
       return;
     }
     let target = this.crouching ? A.crouchSpeed : this.sprinting ? A.runSpeed : A.walkSpeed;
+    target *= this.mods.speed;
     if (this.drawing) target *= A.drawMoveFactor;
     if (this.hp < H.limpBelow) target *= H.limpSpeed;       // wounded archers limp
     if (this.bandaging) target *= 0.25;                     // kneeling: moving off interrupts it
@@ -142,7 +156,7 @@ export class Archer {
       this.stamina = Math.max(0, this.stamina - A.staminaDrain * dt);
       if (this.stamina <= 0) this.sprinting = false;
     } else {
-      this.stamina = Math.min(A.stamina, this.stamina + A.staminaRegen * dt * (this.speed < 0.5 ? 1.4 : 1));
+      this.stamina = Math.min(A.stamina * this.mods.stamina, this.stamina + A.staminaRegen * dt * (this.speed < 0.5 ? 1.4 : 1));
     }
     // noise level for AI hearing: crouching is quiet, sprinting loud
     this.noise = this.speed < 0.3 ? 0 : this.crouching ? 0.3 : this.sprinting ? 1.4 : 1;
@@ -191,6 +205,6 @@ export class Archer {
   updateDraw(dt) {
     if (!this.drawing) { this.fullDrawHeld = 0; return; }
     this.drawTime += dt;
-    if (this.drawTime >= B.fullDrawTime) this.fullDrawHeld += dt;
+    if (this.drawTime >= B.fullDrawTime * this.mods.draw) this.fullDrawHeld += dt;
   }
 }

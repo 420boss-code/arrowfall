@@ -6,6 +6,7 @@ import { CONFIG } from '../config.js';
 import { clamp, lerp } from '../core/utils.js';
 import { bowGeometry } from './ArcherRenderer.js';
 import { arrowGeometry } from '../combat/Projectiles.js';
+import { COSMETICS } from '../core/items.js';
 
 const BOW_SCALE = 0.74;
 const K = CONFIG.knife;
@@ -45,7 +46,8 @@ export class ViewModel {
     this.mats = { sleeve: lam(0xffffff), skin: lam(CONFIG.colours.skin), string: lam(0xe8e0c8), leather: lam(CONFIG.colours.leather) };
 
     this.bowRig = new THREE.Group();
-    const bow = new THREE.Mesh(bowGeometry(), lam(0x6b4423));
+    this.bowMat = lam(0x6b4423);
+    const bow = new THREE.Mesh(bowGeometry(), this.bowMat);
     bow.scale.setScalar(BOW_SCALE);
     bow.position.set(0, 0, 0.14 * BOW_SCALE);        // put the handle at the rig origin
     this.bow = bow;
@@ -97,6 +99,14 @@ export class ViewModel {
     if (this.team !== sleeve) {
       this.team = sleeve;
       this.mats.sleeve.color.set(sleeve);
+    }
+    // marketplace bow finish and knife tint
+    const cosKey = a.cos ? `${a.cos.bow}|${a.cos.knife}` : '';
+    if (this.cosKey !== cosKey) {
+      this.cosKey = cosKey;
+      const bw = a.cos && COSMETICS[a.cos.bow], kn = a.cos && COSMETICS[a.cos.knife];
+      this.bowMat.color.set(bw ? bw.colour : 0x6b4423);
+      if (this.knife.material.vertexColors) this.knife.material.color.setRGB(...(kn ? kn.tint : [1, 1, 1]));
     }
     // follow the camera
     this.root.position.copy(camera.position);
