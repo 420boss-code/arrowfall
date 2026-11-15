@@ -420,9 +420,11 @@ export class Game {
     else this.health.startBandage(me);
   }
 
-  spectateTarget(me) {
-    const pool = this.ffa ? this.archers : this.teams[me.team];
-    return pool.find((a) => a.alive && a.active && a !== me) || null;
+  spectateTarget(me, current = null, direction = 1) {
+    const pool = (this.ffa ? this.archers : this.teams[me.team]).filter((a) => a.alive && a.active && a !== me);
+    if (!pool.length) return null;
+    const i = pool.indexOf(current);
+    return i < 0 ? pool[0] : pool[(i + direction + pool.length) % pool.length];
   }
 
   aliveCount(team) {
