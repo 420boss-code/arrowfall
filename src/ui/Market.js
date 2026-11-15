@@ -11,7 +11,7 @@ const $ = (id) => document.getElementById(id);
 const RARITY = { common: 'Common', rare: 'Rare', epic: 'Epic' };
 
 function marketArt(it) {
-  const ink = `#${it.colour.toString(16).padStart(6, '0')}`;
+  const ink = it.colour === undefined ? '#c58a3c' : `#${it.colour.toString(16).padStart(6, '0')}`;
   const shapes = {
     bow: `<path d="M95 18 Q48 50 95 82" fill="none" stroke="${ink}" stroke-width="8" stroke-linecap="round"/><path d="M95 18 L95 82" fill="none" stroke="#e2d8bc" stroke-width="2"/><path d="M84 50 L103 50" stroke="#d3b37a" stroke-width="5"/>`,
     hood: `<path d="M95 18 C67 18 56 40 59 68 L70 83 L120 83 L131 68 C134 40 123 18 95 18Z" fill="${ink}" stroke="#d9d0bb" stroke-width="3"/><path d="M75 52 Q95 34 115 52 L108 75 L82 75Z" fill="#222923"/><path d="M82 75 Q95 65 108 75" fill="none" stroke="#d9d0bb" stroke-width="3"/>`,
