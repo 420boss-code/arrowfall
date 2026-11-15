@@ -4,7 +4,18 @@ A bow-and-arrow battle in the browser (20 v 20, 10 v 10, 5 v 5, free-for-all or 
 
 ## The front page
 
-The site opens as **Numberwell**, a working maths solver and practice page. It solves sums step by step with exact fractions, and has quick-fire practice questions, topic notes and a times-table grid. Type **1+1** into the solver and press Solve (spaces and a trailing "=" are fine) to open the game. The game code and Three.js are a separate download, fetched only at that moment, and the tab title stays the same.
+The site opens as **Numberwell**, a working maths helper:
+- **A step-by-step solver** for sums (with exact fractions, powers, roots, percentages such as "15% of 80", π and trigonometry in degrees) and for **linear equations** such as 3(x − 2) = 2x + 5. Equations are solved the way you would on paper, ending with a check.
+- **Quick practice:** seven topics, including equations, with a streak and a count of questions answered today.
+- **Printable worksheets:** pick a topic and a length. Each sheet has a name and date line, and its answer key prints on a separate page.
+- **Interactive resources** on sets, pi, trigonometry, angles, statistics (mean, median, mode, range), Pythagoras and ratio.
+- **Twelve revision notes**, a times-table grid, and About, Help and Privacy pages in the footer.
+
+Type **1+1** and press Solve (spaces and a trailing "=" are fine). The answer, 2, appears like any other sum. A moment later a **class sign-in** card opens, asking for a "student code" (the player code). The page source contains no trace of the game: its markup, code, Three.js and models are a separate download, sent only after sign-in. The tab title stays the same.
+
+### Staying signed in
+
+The sign-in card has **Keep me signed in on this device**, ticked by default. With it ticked, the login lasts 90 days and renews itself as it is used, so typing 1+1 goes straight into the game without the code. Unticked, the login ends when the browser closes (or after 12 hours). Guest logins last a day. Logins are signed tokens rather than server memory, so they survive Render's restarts and sleeps. **Log out** in the game's start menu ends a login straight away. Revoking a code or banning a player still takes effect immediately.
 
 ## Running it
 
@@ -57,7 +68,7 @@ The maths page is public. Typing **1+1** asks for a code, and the server sends n
 
 - **Players** each have their own 8-digit **player code**: 3 digits of player number (001–999) and a 5-digit check, e.g. `007 70397`. Codes are calculated from the secret `CODE_SECRET` rather than stored, so they keep working on hosts whose disk is wiped on restart. The same number always gives the same code; changing `CODE_SECRET` changes every code.
 - **Anyone can make their own code:** the login card has a **New here? Get your own code** button. Self-made codes are 11 digits (a 6-digit player number plus the 5-digit check, e.g. `473040 71934`), and the new player is logged straight in. Each address can make 3 codes an hour, with at most 60 an hour overall. While the server runs, every number is different. After a restart, a repeat is very unlikely but possible, because nothing is stored. The admin can switch sign-up off in the admin panel; setting `ALLOW_SIGNUP=0` keeps it closed at every start.
-- **Guests** can choose **Just looking? Play as a guest** on the login card. A guest gets a one-day session with no player number: they can play offline, join public servers and join parties by code, but cannot start servers or parties, or use friends. Each address can start 10 guest sessions an hour, with at most 300 an hour overall. Guest play starts switched on; setting `ALLOW_GUESTS=0` keeps it off at every start.
+- **Guests** can choose **Continue without a code** on the sign-in card. A guest gets a one-day session with no player number: they can play offline, join public servers and join parties by code, but cannot start servers or parties, or use friends. Each address can start 10 guest sessions an hour, with at most 300 an hour overall. Guest play starts switched on; setting `ALLOW_GUESTS=0` keeps it off at every start.
 - **The admin** logs in with the admin password: a 5-letter word and 2 digits, e.g. `otter58`. This adds an **Admin panel** to the start and pause menus, where the admin can:
   - **Create player codes:** pick a number (the next free one is suggested) and an optional name, then hand the code to that player.
   - **Revoke or restore a code:** revoking logs that player out at once.
@@ -66,7 +77,7 @@ The maths page is public. Typing **1+1** asks for a code, and the server sends n
   - **Change the admin password** (until the next restart; set `ADMIN_PASSWORD` to change it for good).
   - **Create and delete factions:** each has a name, a tag of up to 5 letters, and a colour. The tag appears before members' names and members are put on the same team.
 
-**Security:** passwords are stored only as salted scrypt hashes, logins use a 14-day HttpOnly cookie, and after 5 wrong attempts an address is locked out for 1 minute, growing to 10 minutes with repeated failures. The admin password format is short, so the lockout matters: keep it private.
+**Security:** passwords are stored only as salted scrypt hashes, logins are HMAC-signed tokens in an HttpOnly cookie (90 days with "Keep me signed in", otherwise until the browser closes), and after 5 wrong attempts an address is locked out for 1 minute, growing to 10 minutes with repeated failures. The admin password format is short, so the lockout matters: keep it private.
 
 **Settings (environment variables):**
 

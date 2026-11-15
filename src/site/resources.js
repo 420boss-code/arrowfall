@@ -1,4 +1,5 @@
-// Numberwell resources: Sets, Pi, Trigonometry and Angles – notes plus an interactive tool for each.
+// Numberwell resources: Sets, Pi, Trigonometry, Angles, Statistics, Pythagoras and Ratio – notes plus
+// an interactive tool for each.
 const $ = (id) => document.getElementById(id);
 const R = Math.PI / 180;
 const fmt = (x, dp = 4) => {
@@ -145,6 +146,63 @@ const SECTIONS = {
       <h4>Polygon angles</h4>
       <div class="nw-form"><label>Number of sides <input id="polyN" type="number" min="3" max="1000" value="6" /></label></div>
       <div id="polyOut" class="nw-out"></div>`,
+  },
+  stats: {
+    title: 'Statistics',
+    notes: `
+      <p>Four numbers summarise a list of data. For 3, 7, 7, 2, 9:</p>
+      <table class="nw-sym">
+        <tr><th>Measure</th><th>How to find it</th><th>Example</th></tr>
+        <tr><td><b>Mean</b></td><td>add them all up and divide by how many there are</td><td>28 ÷ 5 = 5.6</td></tr>
+        <tr><td><b>Median</b></td><td>put them in order; take the middle one (with an even count, halfway between the middle two)</td><td>2, 3, <b>7</b>, 7, 9 → 7</td></tr>
+        <tr><td><b>Mode</b></td><td>the value that appears most often (there can be more than one, or none)</td><td>7</td></tr>
+        <tr><td><b>Range</b></td><td>largest minus smallest – a measure of spread, not an average</td><td>9 − 2 = 7</td></tr>
+      </table>
+      <p>The mean uses every value, so one unusually large or small value (an <b>outlier</b>) can drag it a long way; the median is not affected as much. To compare two sets of data, give an average <i>and</i> the range.</p>
+      <p><b>Mean from a frequency table:</b> multiply each value by its frequency, add those up, and divide by the total frequency.</p>`,
+    tool: `
+      <h4>Averages calculator</h4>
+      <p class="nw-hint">Type numbers separated by commas or spaces.</p>
+      <div class="nw-form"><label>Data <input id="statIn" value="3, 7, 7, 2, 9" /></label></div>
+      <div id="statOut" class="nw-out"></div>`,
+  },
+  pythag: {
+    title: 'Pythagoras',
+    notes: `
+      <p>In a right-angled triangle the longest side, opposite the right angle, is the <b>hypotenuse</b> c. <b>Pythagoras' theorem</b> says</p>
+      <p class="nw-big">a² + b² = c²</p>
+      <ul>
+        <li><b>Finding the hypotenuse:</b> square the two shorter sides, add, then square-root. 3 and 4 give √(9 + 16) = √25 = 5.</li>
+        <li><b>Finding a shorter side:</b> square the hypotenuse, <i>subtract</i> the square of the other side, then square-root. Hypotenuse 13, side 5: √(169 − 25) = √144 = 12.</li>
+        <li><b>Is it right-angled?</b> If the squares of the two shorter sides add up to the square of the longest, yes.</li>
+      </ul>
+      <p>Whole-number answers like 3, 4, 5 and 5, 12, 13 are called <b>Pythagorean triples</b>. Any multiple of one is another: 6, 8, 10.</p>
+      <p>The theorem also gives the distance between two points: from (x₁, y₁) to (x₂, y₂) is √((x₂ − x₁)² + (y₂ − y₁)²).</p>`,
+    tool: `
+      <h4>Find the missing side</h4>
+      <p class="nw-hint">Fill in two sides and leave the one you want blank.</p>
+      <div class="nw-form"><label>a <input id="pyA" type="number" step="any" min="0" value="6" /></label><label>b <input id="pyB" type="number" step="any" min="0" value="8" /></label><label>c (hypotenuse) <input id="pyC" type="number" step="any" min="0" /></label></div>
+      <svg id="pySvg" viewBox="0 0 240 170" role="img" aria-label="Right-angled triangle"></svg>
+      <div id="pyOut" class="nw-out"></div>`,
+  },
+  ratio: {
+    title: 'Ratio',
+    notes: `
+      <p>A <b>ratio</b> compares amounts: 2 : 3 means "for every 2 of the first, 3 of the second".</p>
+      <ul>
+        <li><b>Simplifying:</b> divide every part by the highest common factor. 12 : 18 = 2 : 3 (dividing by 6).</li>
+        <li><b>Sharing in a ratio:</b> add the parts to find the total number of parts, find one part, then multiply. Share £60 in the ratio 2 : 3 → 5 parts, one part = £12, so £24 and £36.</li>
+        <li><b>Ratio to fraction:</b> in 2 : 3 the first amount is 2/5 of the total and the second is 3/5.</li>
+        <li><b>Unitary method:</b> find the value of one, then scale. If 4 pens cost £3.20, one costs 80p, so 7 cost £5.60.</li>
+      </ul>
+      <p><b>Direct proportion</b>: when one quantity doubles, so does the other (cost and number of items). <b>Inverse proportion</b>: when one doubles, the other halves (number of workers and time taken).</p>`,
+    tool: `
+      <h4>Share an amount</h4>
+      <div class="nw-form"><label>Amount <input id="raAmt" type="number" step="any" value="60" /></label><label>Ratio <input id="raRat" value="2 : 3" /></label></div>
+      <div id="raOut" class="nw-out"></div>
+      <h4>Simplify a ratio</h4>
+      <div class="nw-form"><label>Ratio <input id="raSimp" value="12 : 18 : 30" /></label></div>
+      <div id="raSimpOut" class="nw-out"></div>`,
   },
 };
 
@@ -327,13 +385,101 @@ function anglesTool() {
   poly();
 }
 
+function statsTool() {
+  const run = () => {
+    const xs = ($('statIn').value.match(/-?\d*\.?\d+/g) || []).map(Number);
+    if (!xs.length) { $('statOut').innerHTML = 'Type some numbers.'; return; }
+    const n = xs.length, sum = xs.reduce((a, b) => a + b, 0), sorted = [...xs].sort((a, b) => a - b);
+    const mid = Math.floor(n / 2);
+    const median = n % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    const counts = new Map(); for (const x of xs) counts.set(x, (counts.get(x) || 0) + 1);
+    const top = Math.max(...counts.values());
+    const modes = top > 1 ? [...counts].filter(([, c]) => c === top).map(([x]) => x).sort((a, b) => a - b) : [];
+    $('statOut').innerHTML = `
+      <div>In order: ${sorted.map(fmt).join(', ')} <small>(${n} value${n > 1 ? 's' : ''})</small></div>
+      <div><b>Mean</b> = ${fmt(sum)} ÷ ${n} = <b>${fmt(sum / n)}</b></div>
+      <div><b>Median</b> = ${n % 2 ? `the ${mid + 1}${['st', 'nd', 'rd'][mid] || 'th'} value` : `halfway between ${fmt(sorted[mid - 1])} and ${fmt(sorted[mid])}`} = <b>${fmt(median)}</b></div>
+      <div><b>Mode</b> = <b>${modes.length ? modes.map(fmt).join(' and ') : 'none'}</b>${modes.length ? ` <small>(appears ${top} times)</small>` : ' <small>(no value repeats)</small>'}</div>
+      <div><b>Range</b> = ${fmt(sorted[n - 1])} − ${fmt(sorted[0])} = <b>${fmt(sorted[n - 1] - sorted[0])}</b></div>`;
+  };
+  $('statIn').addEventListener('input', run);
+  run();
+}
+
+function pythagTool() {
+  const ids = ['pyA', 'pyB', 'pyC'];
+  const draw = (a, b, c, find) => {
+    const k = 130 / Math.max(a, b, 1e-9);
+    const w = a * k, h = b * k, x0 = 40, y0 = 150;
+    const lab = (t, x, y, hi) => `<text x="${x}" y="${y}" text-anchor="middle" class="${hi ? 'nw-svg-hi' : ''}">${t}</text>`;
+    $('pySvg').innerHTML = `<polygon points="${x0},${y0} ${x0 + w},${y0} ${x0},${y0 - h}" class="nw-svg-shape" />
+      <rect x="${x0}" y="${y0 - 12}" width="12" height="12" class="nw-svg-right" />
+      ${lab(`a = ${fmt(a, 3)}`, x0 + w / 2, y0 + 16, find === 'pyA')}
+      ${lab(`b = ${fmt(b, 3)}`, x0 - 22, y0 - h / 2, find === 'pyB')}
+      ${lab(`c = ${fmt(c, 3)}`, x0 + w / 2 + 26, y0 - h / 2 - 6, find === 'pyC')}`;
+  };
+  const run = () => {
+    const v = ids.map((id) => ($(id).value.trim() === '' ? null : Number($(id).value)));
+    const blanks = v.filter((x) => x === null).length;
+    const out = $('pyOut');
+    if (v.some((x) => x !== null && !(x > 0))) { out.innerHTML = 'Sides must be positive numbers.'; return; }
+    if (blanks === 0) {
+      const [a, b, c] = v;
+      const ok = Math.abs(a * a + b * b - c * c) < 1e-9 * Math.max(1, c * c);
+      out.innerHTML = `${fmt(a)}² + ${fmt(b)}² = ${fmt(a * a + b * b)} and ${fmt(c)}² = ${fmt(c * c)}, so this triangle <b>${ok ? 'is' : 'is not'}</b> right-angled.`;
+      if (ok) draw(a, b, c, null);
+      return;
+    }
+    if (blanks !== 1) { out.innerHTML = 'Fill in exactly two sides.'; return; }
+    let [a, b, c] = v, find;
+    if (c === null) { c = Math.sqrt(a * a + b * b); find = 'pyC'; out.innerHTML = `c² = a² + b² = ${fmt(a * a)} + ${fmt(b * b)} = ${fmt(a * a + b * b)}<br>c = √${fmt(a * a + b * b)} = <b>${fmt(c)}</b>`; }
+    else {
+      const known = a === null ? b : a;
+      if (known >= c) { out.innerHTML = 'The hypotenuse must be the longest side.'; return; }
+      const x = Math.sqrt(c * c - known * known);
+      find = a === null ? 'pyA' : 'pyB';
+      const nm = a === null ? 'a' : 'b';
+      out.innerHTML = `${nm}² = c² − ${nm === 'a' ? 'b' : 'a'}² = ${fmt(c * c)} − ${fmt(known * known)} = ${fmt(c * c - known * known)}<br>${nm} = √${fmt(c * c - known * known)} = <b>${fmt(x)}</b>`;
+      if (a === null) a = x; else b = x;
+    }
+    draw(a, b, c, find);
+  };
+  ids.forEach((id) => $(id).addEventListener('input', run));
+  run();
+}
+
+function ratioTool() {
+  const parts = (str) => (str.match(/\d*\.?\d+/g) || []).map(Number).filter((x) => x > 0);
+  const gcd = (a, b) => { while (b) [a, b] = [b, a % b]; return a; };
+  const share = () => {
+    const amt = Number($('raAmt').value), r = parts($('raRat').value);
+    const out = $('raOut');
+    if (r.length < 2 || !Number.isFinite(amt)) { out.innerHTML = 'Enter an amount and a ratio like 2 : 3.'; return; }
+    const total = r.reduce((a, b) => a + b, 0), one = amt / total;
+    out.innerHTML = `Total parts: ${r.join(' + ')} = ${fmt(total)}<br>One part: ${fmt(amt)} ÷ ${fmt(total)} = ${fmt(one)}<br>Shares: ${r.map((p) => `${fmt(p)} × ${fmt(one)} = <b>${fmt(p * one)}</b>`).join(' · ')}`;
+  };
+  const simp = () => {
+    const r = parts($('raSimp').value);
+    const out = $('raSimpOut');
+    if (r.length < 2) { out.innerHTML = 'Enter a ratio like 12 : 18.'; return; }
+    // clear decimals first, then divide by the highest common factor
+    const dp = Math.max(...r.map((x) => (String(x).split('.')[1] || '').length));
+    const ints = r.map((x) => Math.round(x * 10 ** dp));
+    const h = ints.reduce(gcd);
+    out.innerHTML = `${dp ? `× ${10 ** dp} to clear decimals: ${ints.join(' : ')}<br>` : ''}Highest common factor: ${h}<br>Simplest form: <b>${ints.map((x) => x / h).join(' : ')}</b>`;
+  };
+  ['raAmt', 'raRat'].forEach((id) => $(id).addEventListener('input', share));
+  $('raSimp').addEventListener('input', simp);
+  share(); simp();
+}
+
 // ---------------------------------------------------------------- mount
 export function mountResources() {
   const tabs = $('resTabs'), body = $('resBody');
   const build = (key) => {
     const s = SECTIONS[key];
     body.innerHTML = `<div class="nw-res"><div class="nw-res-notes">${s.notes}</div><div class="nw-res-tool">${s.tool}</div></div>`;
-    ({ sets: setsTool, pi: piTool, trig: trigTool, angles: anglesTool })[key]();
+    ({ sets: setsTool, pi: piTool, trig: trigTool, angles: anglesTool, stats: statsTool, pythag: pythagTool, ratio: ratioTool })[key]();
     tabs.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.res === key));
   };
   tabs.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) build(b.dataset.res); });

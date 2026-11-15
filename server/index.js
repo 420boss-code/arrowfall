@@ -157,23 +157,24 @@ function friendStatus(me, ids) {
 async function api(req, res, p, ip, sess) {
   if (p === '/api/login' && req.method === 'POST') {
     const body = await bodyJson(req);
-    const r = auth.login(body && (body.code ?? body.password), ip);
+    const r = auth.login(body && (body.code ?? body.password), ip, !body || body.remember !== false);
     if (r.error) return json(res, r.status, { error: r.error });
-    res.setHeader('Set-Cookie', auth.cookie(r.token, isSecure(req)));
+    res.setHeader('Set-Cookie', auth.cookie(r.token, isSecure(req), r.maxAge));
     return json(res, 200, { role: r.role, player: r.player, factions: auth.state.factions });
   }
   if (p === '/api/signup' && req.method === 'POST') {
     const body = (await bodyJson(req)) || {};
-    const r = auth.signup(ip, body.name);
+    const r = auth.signup(ip, body.name, body.remember !== false);
     if (r.error) return json(res, r.status, { error: r.error });
-    res.setHeader('Set-Cookie', auth.cookie(r.token, isSecure(req)));
+    res.setHeader('Set-Cookie', auth.cookie(r.token, isSecure(req), r.maxAge));
     return json(res, 201, { role: r.role, player: r.player, code: r.code, factions: auth.state.factions });
   }
   if (p === '/api/signup-status') return json(res, 200, { open: auth.state.signupOpen, guests: auth.state.guestsOpen });
   if (p === '/api/guest' && req.method === 'POST') {
-    const r = auth.guest(ip);
+    const body = (await bodyJson(req)) || {};
+    const r = auth.guest(ip, body.remember !== false);
     if (r.error) return json(res, r.status, { error: r.error });
-    res.setHeader('Set-Cookie', auth.cookie(r.token, isSecure(req)));
+    res.setHeader('Set-Cookie', auth.cookie(r.token, isSecure(req), r.maxAge));
     return json(res, 201, { role: r.role, player: null, guestId: r.guestId, factions: auth.state.factions });
   }
   if (p === '/api/logout' && req.method === 'POST') {
@@ -184,7 +185,12 @@ async function api(req, res, p, ip, sess) {
   if (p === '/api/health') return json(res, 200, { ok: true, rooms: rooms.size, players: [...rooms.values()].reduce((s, r) => s + r.humans, 0) });
   if (!sess) return json(res, 401, { error: 'Login required.' });
 
-  if (p === '/api/session') return json(res, 200, { role: sess.role, player: sess.player, guestId: sess.guestId || null, factions: auth.state.factions });
+  if (p === '/api/session') {
+    // a remembered login that is getting old is quietly extended
+    const fresh = auth.renewal(sess);
+    if (fresh) res.setHeader('Set-Cookie', auth.cookie(fresh.token, isSecure(req), fresh.maxAge));
+    return json(res, 200, { role: sess.role, player: sess.player, guestId: sess.guestId || null, remember: !!sess.remember, factions: auth.state.factions });
+  }
   if (p === '/api/servers' && req.method === 'GET') {
     const list = [...rooms.values()].filter((r) => r.isPublic).map((r) => r.info()).sort((a, b) => b.humans - a.humans);
     return json(res, 200, list);

@@ -1,0 +1,165 @@
+<!-- Game interface: injected by game-entry.js once logged in, so the public page holds none of it. -->
+  <div id="app"></div>
+
+  <div id="hud" class="hidden">
+    <canvas id="minimap" width="180" height="180"></canvas>
+    <div id="teamCounts"><span class="blue">Blue <b id="blueCount">20</b></span> – <span class="red">Red <b id="redCount">20</b></span></div>
+    <div id="roundInfo"></div>
+    <div id="killfeed"></div>
+
+    <div id="crosshair">
+      <i class="ch t"></i><i class="ch b"></i><i class="ch l"></i><i class="ch r"></i><i class="dot"></i>
+    </div>
+    <div id="hitmarker">✕</div>
+    <div id="drawMeter"><div id="drawFill"></div></div>
+    <div id="drawLabel"></div>
+    <div id="prompt"></div>
+    <div id="centreMsg"></div>
+    <div id="bandageBar"><span>Bandaging…</span><div><i id="bandageFill"></i></div></div>
+    <div id="deathRecap"></div>
+    <div id="damageVignette"></div>
+    <div id="dmgArrow"></div>
+
+    <div id="vitals">
+      <div class="bar"><label>HP</label><div class="track hpTrack"><div id="hpChip" class="chip"></div><div id="hpFill" class="fill hp"></div></div><span id="hpText">100</span></div>
+      <div id="bandagePrompt"></div>
+      <div class="bar"><label>STA</label><div class="track"><div id="staFill" class="fill sta"></div></div></div>
+      <div id="stance"></div>
+    </div>
+    <div id="ammo"><span class="quiverIcon">➶</span> <b id="arrowCount">30</b></div>
+    <div id="viewHint">F – knife · C – crouch · V – view · Tab – scores · Esc – pause</div>
+    <div id="perf" class="hidden"></div>
+  </div>
+
+  <div id="scoreboard" class="overlay hidden"></div>
+
+  <div id="startMenu" class="overlay menu">
+    <div class="panel">
+      <h1>Arrowfall</h1>
+      <p class="tag">Bows, a clearing and a forest full of shadows. Mind the trees.</p>
+      <p id="whoami" class="whoami"></p>
+      <h3>Battle the bots</h3>
+      <div id="optLayout"></div>
+      <div class="row"><label>Mode</label>
+        <select id="optMode"><option value="tdm">Team Deathmatch (best of five)</option><option value="kotf">King of the Field</option></select></div>
+      <div class="row"><label>Difficulty</label>
+        <select id="optDiff"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select></div>
+      <div class="row"><label>Friendly fire</label><input type="checkbox" id="optFF" /></div>
+      <button id="btnStart">Play offline</button>
+      <button id="btnOnline" class="online">Play online – servers and parties</button>
+      <div class="btnRow"><button id="btnFriends" class="secondary">Friends</button><button id="btnSettings" class="secondary">Settings</button></div>
+      <button id="btnAdmin" class="secondary hidden">Admin panel</button>
+      <button id="btnLogout" class="secondary">Log out</button>
+      <p id="startNote" class="note"></p>
+      <div class="controls">
+        <b>WASD</b> move · <b>Shift</b> sprint · <b>C</b> crouch (or hold <b>Ctrl</b>) · <b>Space</b> jump · <b>E</b> pick up arrows · <b>Q</b> bandage · <b>F</b> knife<br />
+        <b>Hold LMB</b> draw, release to loose · <b>RMB</b> zoom while drawing · <b>V</b> third person · <b>Tab</b> scoreboard · <b>F3</b> performance
+      </div>
+    </div>
+  </div>
+
+
+  <div id="serverMenu" class="overlay menu hidden">
+    <div class="panel wide">
+      <h2>Play online</h2>
+      <div class="row"><label>Your name</label><input id="playerName" maxlength="16" placeholder="Archer" /></div>
+      <div class="row"><label>Faction</label><select id="playerFaction"><option value="">None</option></select></div>
+      <h3>Public servers</h3>
+      <table class="servers">
+        <thead><tr><th>Server</th><th>Layout</th><th>Mode</th><th>Bots</th><th>Players</th><th></th></tr></thead>
+        <tbody id="serverList"></tbody>
+      </table>
+      <button id="btnRefresh" class="secondary small">Refresh list</button>
+      <h3>Join a party</h3>
+      <div class="row joincode"><label>Party code</label><input id="joinCode" maxlength="5" placeholder="ABCDE" autocomplete="off" /><button id="btnJoinCode" class="secondary small">Join</button></div>
+      <div id="createSection">
+        <h3>Start a game</h3>
+        <div class="row"><label>Who can join</label><select id="newWho"><option value="party">Party – only people with the code</option><option value="public">Public – listed for everyone</option></select></div>
+        <div class="row"><label>Name</label><input id="newName" maxlength="28" placeholder="My party" /></div>
+        <div id="newLayout"></div>
+        <div class="row"><label>Mode</label><select id="newMode"><option value="tdm">Team Deathmatch</option><option value="kotf">King of the Field</option></select></div>
+        <div class="row"><label>Bot difficulty</label><select id="newDiff"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select></div>
+        <div class="row"><label>Friendly fire</label><input type="checkbox" id="newFF" /></div>
+        <button id="btnCreate">Create party</button>
+        <div id="partyBox" class="newcode party" hidden>
+          <div>Party code <b id="partyCode"></b></div>
+          <small>Send this code to your friends. They choose Play online, then Join a party.</small>
+          <div class="btnRow"><button id="partyCopy" class="secondary small">Copy code</button><button id="partyEnter" class="small">Enter the party</button></div>
+        </div>
+      </div>
+      <p id="guestCreateNote" class="note hidden">Guests can join servers and parties. To start your own, get a player code from the login screen.</p>
+      <p id="netStatus" class="note"></p>
+      <button id="btnBack" class="secondary">Back</button>
+    </div>
+  </div>
+
+  <div id="settingsMenu" class="overlay menu hidden">
+    <div class="panel settings">
+      <h2>Settings</h2>
+      <div id="settingsBody"></div>
+      <p class="note">Settings are saved in this browser and apply at once.</p>
+      <div class="btnRow"><button id="setReset" class="secondary">Restore defaults</button><button id="setBack">Done</button></div>
+    </div>
+  </div>
+
+  <div id="friendsMenu" class="overlay menu hidden">
+    <div class="panel wide">
+      <h2>Friends</h2>
+      <p class="yourNum">Your player number: <b id="frMe">…</b> <button id="frCopy" class="secondary small">Copy</button></p>
+      <p class="note">Swap numbers with a friend and add each other. Once you both have, you can see when they are online and join whatever game they are in, parties included. Your number is not your login code; never share that.</p>
+      <div class="row"><input id="frNum" inputmode="numeric" maxlength="6" placeholder="Their player number" /><input id="frNick" maxlength="20" placeholder="Nickname (optional)" /><button id="frAdd" class="secondary small">Add</button></div>
+      <div id="frList" class="admList"></div>
+      <p id="frStatus" class="note"></p>
+      <button id="frBack" class="secondary">Back</button>
+    </div>
+  </div>
+
+  <div id="adminMenu" class="overlay menu hidden">
+    <div class="panel wide admin">
+      <h2>Admin</h2>
+      <h3>Passwords</h3>
+      <div class="row"><label>New admin password</label><input id="admAdmin" type="password" autocomplete="new-password" placeholder="5 letters + 2 digits, e.g. otter58" /><button id="admAdminBtn" class="secondary small">Change</button></div>
+      <h3>Player codes</h3>
+      <div class="row"><label for="admSignup">Anyone can make a code</label><input type="checkbox" id="admSignup" /></div>
+      <div class="row"><label for="admGuests">Guests can play without a code</label><input type="checkbox" id="admGuests" /></div>
+      <div class="row"><label>Player number</label><input id="admNum" type="number" min="1" max="999" class="tag" /><input id="admNumName" placeholder="Name (optional)" maxlength="24" /><button id="admCodeBtn" class="secondary small">Create code</button></div>
+      <div id="admNewCode" class="newcode" hidden></div>
+      <div id="admCodes" class="admList"></div>
+      <h3>Factions</h3>
+      <div id="admFactions" class="admList"></div>
+      <div class="row"><input id="admFName" placeholder="Faction name" maxlength="24" /><input id="admFTag" placeholder="TAG" maxlength="5" class="tag" /><input id="admFColour" type="color" value="#d9b45a" /><button id="admFAdd" class="secondary small">Create</button></div>
+      <h3>Players online</h3>
+      <div id="admPlayers" class="admList"></div>
+      <h3>Bans</h3>
+      <div id="admBans" class="admList"></div>
+      <p id="admStatus" class="note"></p>
+      <button id="admRefresh" class="secondary">Refresh</button>
+      <button id="admBack" class="secondary">Back</button>
+    </div>
+  </div>
+
+  <div id="pauseMenu" class="overlay menu hidden">
+    <div class="panel">
+      <h2 id="pauseTitle">Paused</h2>
+      <p id="pParty" class="newcode party hidden">Party code <b id="pPartyCode"></b> <button id="pPartyCopy" class="secondary small">Copy</button></p>
+      <div class="row" id="pFFRow"><label>Friendly fire</label><input type="checkbox" id="pFF" /></div>
+      <button id="btnResume">Resume</button>
+      <div class="btnRow"><button id="btnPauseSettings" class="secondary">Settings</button><button id="btnPauseFriends" class="secondary">Friends</button></div>
+      <button id="btnPauseAdmin" class="secondary hidden">Admin panel</button>
+      <button id="btnQuit" class="secondary">Quit to menu</button>
+    </div>
+  </div>
+
+  <div id="roundMenu" class="overlay menu hidden">
+    <div class="panel wide">
+      <h2 id="roundTitle"></h2>
+      <p id="roundSub"></p>
+      <div id="roundMvp"></div>
+      <div id="roundTable"></div>
+      <p id="roundWait" class="note"></p>
+      <button id="btnNext">Next round</button>
+      <button id="btnMenu" class="secondary">Main menu</button>
+    </div>
+  </div>
+
+  <div id="loading" class="overlay"><div class="panel"><h2>Growing the forest…</h2></div></div>

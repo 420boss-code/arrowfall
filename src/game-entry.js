@@ -1,10 +1,12 @@
 // Loaded on demand by the maths page. Keeps the game, Three.js and the game styles out of the first download.
 import './ui/styles.css';
+import markup from './game-markup.html?raw';
 import { Game } from './core/Game.js';
 import { loadTreeModels } from './world/treeModels.js';
 import { loadPropModels } from './world/propModels.js';
 
 export async function startGame() {
+  document.getElementById('gameRoot').innerHTML = markup;
   const loading = document.getElementById('loading');
   const label = loading.querySelector('h2');
   loading.classList.remove('hidden');

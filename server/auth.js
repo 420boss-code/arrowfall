@@ -13,6 +13,10 @@
 //   DATA_DIR         where admin changes are saved (factions, revocations, names) – optional
 // Changes made in the admin panel are saved to DATA_DIR/auth.json, which a wiped disk loses;
 // the environment variables always apply.
+//
+// Logins are signed tokens (HMAC with a key derived from CODE_SECRET) kept in an HttpOnly cookie,
+// so they survive server restarts and sleeps. "Keep me signed in" makes the cookie last 90 days
+// (renewed as it is used); otherwise it ends when the browser closes, or after 12 hours.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -21,7 +25,9 @@ import { cleanName } from '../src/net/protocol.js';
 
 const DATA_DIR = process.env.DATA_DIR || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../data');
 const FILE = path.join(DATA_DIR, 'auth.json');
-const SESSION_DAYS = 14;
+const REMEMBER_DAYS = 90;          // "keep me signed in"
+const SHORT_HOURS = 12;            // otherwise: until the browser closes, at most this long
+const GUEST_HOURS = 24;
 const COOKIE = 'af_session';
 const MAX_PLAYER = 999;            // admin-made codes: 3-digit player numbers (8-digit codes)
 const SELF_MIN = 100000, SELF_MAX = 999999; // self-made codes: 6-digit player numbers (11-digit codes)
@@ -65,7 +71,7 @@ const randomAdminPassword = () => WORDS[crypto.randomInt(WORDS.length)] + String
 
 export class Auth {
   constructor() {
-    this.sessions = new Map();       // token -> { role, ip, player, expires, gen }
+    this.sessions = new Map();       // token id -> { role, ip, player, expires, gen, remember } (cache of live logins)
     this.attempts = new Map();       // ip -> { count, until }
     // names: player number -> label given by the admin; revoked: numbers blocked from the panel
     this.state = { adminHash: null, adminGen: 1, names: {}, revoked: [], factions: [], bans: [] };
@@ -82,6 +88,8 @@ export class Auth {
       this.secret = crypto.randomBytes(24).toString('base64url');
       notes.push('CODE_SECRET is not set (or too short): player codes made now stop working when the server restarts.');
     }
+    this.sessionKey = crypto.createHmac('sha256', this.secret).update('arrowfall-session-v1').digest();
+    this.loggedOut = new Map();   // token id -> expiry: logged-out tokens until they would have expired
     if (!this.state.adminHash) {
       const pw = process.env.ADMIN_PASSWORD || randomAdminPassword();
       if (!process.env.ADMIN_PASSWORD) notes.push(`admin password for this run: ${pw}`);
@@ -127,14 +135,14 @@ export class Auth {
   }
 
   // Self sign-up: a random unused 6-digit player number. Limited to 3 per address and 60 overall per hour.
-  signup(ip, label) {
-    if (!this.state.signupOpen) return { error: 'Sign-up is closed. Ask the admin for a player code.', status: 403 };
+  signup(ip, label, remember = true) {
+    if (!this.state.signupOpen) return { error: 'New codes are not available right now.', status: 403 };
     if (this.isBanned(ip)) return { error: 'Access denied.', status: 403 };
     const now = Date.now(), hour = 3600_000;
     const mine = (this.signups.get(ip) || []).filter((t) => now - t < hour);
     this.signupTimes = this.signupTimes.filter((t) => now - t < hour);
     if (mine.length >= 3) return { error: 'You have made 3 codes in the last hour – use one of those, or try later.', status: 429 };
-    if (this.signupTimes.length >= 60) return { error: 'Too many new players right now – try again later.', status: 429 };
+    if (this.signupTimes.length >= 60) return { error: 'Too many new codes right now – try again later.', status: 429 };
     const used = new Set([...Object.keys(this.state.names).map(Number), ...this.state.revoked, ...this.envRevoked]);
     for (const s of this.sessions.values()) if (s.player) used.add(s.player);
     let n;
@@ -142,9 +150,8 @@ export class Auth {
     mine.push(now); this.signups.set(ip, mine); this.signupTimes.push(now);
     this.state.names[n] = cleanName(label, 24, '') || 'Self sign-up';
     this._save();
-    const token = crypto.randomBytes(24).toString('base64url');
-    this.sessions.set(token, { role: 'player', ip, player: n, expires: now + SESSION_DAYS * 864e5, gen: this.state.adminGen });
-    return { role: 'player', player: n, code: playerCode(this.secret, n), token };
+    const { token, maxAge } = this.issue({ role: 'player', ip, player: n }, remember);
+    return { role: 'player', player: n, code: playerCode(this.secret, n), token, maxAge };
   }
 
   setSignup(open) { this.state.signupOpen = !!open; this._save(); }
@@ -152,19 +159,18 @@ export class Auth {
   // ---------------------------------------------------------------- guests
   // A guest gets a one-day session with no player number: they can join games but cannot make
   // servers or use friends. Closing guest access ends every guest session at its next request.
-  guest(ip) {
-    if (!this.state.guestsOpen) return { error: 'Guest play is switched off. Ask the admin for a player code.', status: 403 };
+  guest(ip, remember = true) {
+    if (!this.state.guestsOpen) return { error: 'Signing in without a code is not available right now.', status: 403 };
     if (this.isGuestBanned(ip)) return { error: 'Access denied.', status: 403 };
     const now = Date.now(), hour = 3600_000;
     const mine = (this.guests.get(ip) || []).filter((t) => now - t < hour);
     this.guestTimes = this.guestTimes.filter((t) => now - t < hour);
-    if (mine.length >= 10) return { error: 'Too many guest logins from here – try again later.', status: 429 };
-    if (this.guestTimes.length >= 300) return { error: 'Too many guests right now – try again later.', status: 429 };
+    if (mine.length >= 10) return { error: 'Too many sign-ins from here – try again later.', status: 429 };
+    if (this.guestTimes.length >= 300) return { error: 'Too many sign-ins right now – try again later.', status: 429 };
     mine.push(now); this.guests.set(ip, mine); this.guestTimes.push(now);
-    const token = crypto.randomBytes(24).toString('base64url');
     const guestId = crypto.randomInt(1000, 10000);
-    this.sessions.set(token, { role: 'guest', ip, player: null, guestId, expires: now + 864e5, gen: this.state.adminGen });
-    return { role: 'guest', player: null, guestId, token };
+    const { token, maxAge } = this.issue({ role: 'guest', ip, player: null, guestId }, remember);
+    return { role: 'guest', player: null, guestId, token, maxAge };
   }
 
   setGuests(open) {
@@ -234,7 +240,7 @@ export class Auth {
 
   // ---------------------------------------------------------------- login
   // Returns { role, token, player } or { error, status }.
-  login(input, ip) {
+  login(input, ip, remember = true) {
     if (this.isBanned(ip)) return { error: 'Access denied.', status: 403 };
     const now = Date.now();
     const at = this.attempts.get(ip) || { count: 0, until: 0 };
@@ -243,7 +249,7 @@ export class Auth {
     if (check(input, this.state.adminHash)) role = 'admin';
     else {
       player = verifyCode(this.secret, input);
-      if (player && this.isRevoked(player)) { at.count++; this.attempts.set(ip, at); return { error: 'This player code has been revoked.', status: 403 }; }
+      if (player && this.isRevoked(player)) { at.count++; this.attempts.set(ip, at); return { error: 'This code has been revoked.', status: 403 }; }
       if (player) role = 'player';
     }
     if (!role) {
@@ -253,36 +259,86 @@ export class Auth {
       return { error: 'That code was not recognised.', status: 401 };
     }
     this.attempts.delete(ip);
-    const token = crypto.randomBytes(24).toString('base64url');
-    this.sessions.set(token, { role, ip, player, expires: now + SESSION_DAYS * 864e5, gen: this.state.adminGen });
-    return { role, token, player };
+    const { token, maxAge } = this.issue({ role, ip, player }, remember);
+    return { role, token, player, maxAge };
+  }
+
+  // ---------------------------------------------------------------- signed login tokens
+  _mac(body) { return crypto.createHmac('sha256', this.sessionKey).update(body).digest('base64url'); }
+
+  // Make a token for a new login. Returns { token, maxAge } (maxAge in seconds, or null for a cookie
+  // that ends with the browser session).
+  issue({ role, ip, player = null, guestId = null }, remember = true) {
+    const now = Date.now();
+    const life = role === 'guest' ? GUEST_HOURS * 3600e3 : remember ? REMEMBER_DAYS * 864e5 : SHORT_HOURS * 3600e3;
+    const j = crypto.randomBytes(12).toString('base64url');
+    const payload = { r: role, p: player, g: guestId, e: now + life, a: this.state.adminGen, j, k: remember ? 1 : 0 };
+    const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+    this.sessions.set(j, { role, ip, player, guestId, expires: payload.e, gen: payload.a, remember: !!remember, jti: j });
+    return { token: `${body}.${this._mac(body)}`, maxAge: remember ? Math.round(life / 1000) : null };
+  }
+
+  _decode(token) {
+    const dot = token.indexOf('.');
+    if (dot < 1) return null;
+    const body = token.slice(0, dot), mac = token.slice(dot + 1);
+    const want = this._mac(body);
+    if (mac.length !== want.length || !crypto.timingSafeEqual(Buffer.from(mac), Buffer.from(want))) return null;
+    try { return JSON.parse(Buffer.from(body, 'base64url').toString('utf8')); } catch { return null; }
   }
 
   logout(req) {
     const t = this._token(req);
-    if (t) this.sessions.delete(t);
+    const p = t && this._decode(t);
+    if (!p) return;
+    this.loggedOut.set(p.j, p.e);
+    this.sessions.delete(p.j);
+    const now = Date.now();
+    if (this.loggedOut.size > 5000) for (const [j, e] of this.loggedOut) if (e < now) this.loggedOut.delete(j);
   }
 
   _token(req) {
-    const m = /(?:^|;\s*)af_session=([A-Za-z0-9_-]+)/.exec(req.headers.cookie || '');
+    const m = /(?:^|;\s*)af_session=([A-Za-z0-9_.-]+)/.exec(req.headers.cookie || '');
     return m ? m[1] : null;
   }
 
-  // The session behind a request, or null. Admin sessions die when the admin password changes;
-  // player sessions die when their number is revoked.
+  // The login behind a request, or null. Admin logins end when the admin password changes; player
+  // logins end when their number is revoked; guest logins end when guest play is switched off.
   session(req, ip) {
     const t = this._token(req);
-    const s = t && this.sessions.get(t);
-    if (!s) return null;
-    const dead = s.expires < Date.now() || (s.role === 'guest' ? this.isGuestBanned(ip) : this.isBanned(ip)) ||
+    const p = t && this._decode(t);
+    if (!p || p.e < Date.now() || this.loggedOut.has(p.j)) return null;
+    let s = this.sessions.get(p.j);
+    if (!s) {
+      // first sight of this token since a restart
+      s = { role: p.r, ip, player: p.p, guestId: p.g, expires: p.e, gen: p.a, remember: !!p.k, jti: p.j };
+      if (this.sessions.size > 20000) this.sessions.clear();
+      this.sessions.set(p.j, s);
+    }
+    s.ip = ip;
+    const dead = (s.role === 'guest' ? this.isGuestBanned(ip) : this.isBanned(ip)) ||
       (s.role === 'admin' ? s.gen !== this.state.adminGen : s.role === 'guest' ? !this.state.guestsOpen : this.isRevoked(s.player));
-    if (dead) { this.sessions.delete(t); return null; }
+    if (dead) { this.sessions.delete(p.j); return null; }
     s.lastSeen = Date.now();
     return s;
   }
 
-  cookie(token, secure) {
-    const parts = [`${COOKIE}=${token}`, 'Path=/', 'HttpOnly', 'SameSite=Lax', `Max-Age=${SESSION_DAYS * 86400}`];
+  // A remembered login that is past a third of its life gets a fresh 90 days.
+  renewal(s) {
+    if (!s || !s.remember || s.role === 'guest' || s.renewed) return null;
+    if (s.expires - Date.now() > REMEMBER_DAYS * 864e5 * (2 / 3)) return null;
+    s.renewed = true;
+    this.loggedOut.set(s.jti, s.expires);
+    this.sessions.delete(s.jti);
+    const fresh = this.issue({ role: s.role, ip: s.ip, player: s.player }, true);
+    const next = this.sessions.get(this._decode(fresh.token).j);
+    if (next && s.friends) next.friends = s.friends;
+    return fresh;
+  }
+
+  cookie(token, secure, maxAge) {
+    const parts = [`${COOKIE}=${token}`, 'Path=/', 'HttpOnly', 'SameSite=Lax'];
+    if (maxAge) parts.push(`Max-Age=${maxAge}`);
     if (secure) parts.push('Secure');
     return parts.join('; ');
   }

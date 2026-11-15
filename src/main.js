@@ -1,6 +1,7 @@
 // Numberwell: a working maths solver and practice page. Searching "1+1" opens Arrowfall.
 import './site/site.css';
 import { solve } from './site/solver.js';
+import { solveEquation, equationVariable } from './site/equation.js';
 import { mountResources } from './site/resources.js';
 import { escapeHtml } from './core/utils.js';
 
@@ -60,9 +61,9 @@ $('nwGuest').addEventListener('click', async () => {
   const err = $('nwLoginErr');
   err.textContent = '';
   try {
-    const r = await fetch('/api/guest', { method: 'POST', credentials: 'same-origin' });
+    const r = await fetch('/api/guest', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ remember: $('nwRemember').checked }) });
     const data = await r.json().catch(() => ({}));
-    if (!r.ok) { err.textContent = data.error || 'Guest play is not available.'; return; }
+    if (!r.ok) { err.textContent = data.error || 'That is not available right now.'; return; }
     launch(data);
   } catch {
     err.textContent = 'Could not reach the server.';
@@ -79,7 +80,7 @@ $('nwSignupForm').addEventListener('submit', async (e) => {
   try {
     const r = await fetch('/api/signup', {
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: $('nwSignupName').value }),
+      body: JSON.stringify({ name: $('nwSignupName').value, remember: $('nwRemember').checked }),
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) { err.textContent = data.error || 'Could not make a code.'; return; }
@@ -102,7 +103,7 @@ $('nwLoginForm').addEventListener('submit', async (e) => {
   try {
     const r = await fetch('/api/login', {
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: $('nwPass').value }),
+      body: JSON.stringify({ password: $('nwPass').value, remember: $('nwRemember').checked }),
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) { err.textContent = data.error || 'That code was not accepted.'; return; }
@@ -114,11 +115,21 @@ $('nwLoginForm').addEventListener('submit', async (e) => {
 $('nwLoginCancel').addEventListener('click', () => { $('nwLogin').hidden = true; $('nwQuery').value = ''; });
 
 // ---------------------------------------------------------------- solver
+// "15% of 80" reads as 15% × 80
+const normalise = (q) => q.replace(/\bof\b/gi, '*');
+
 function showResult(q) {
   const box = $('nwResult');
   box.hidden = false;
   try {
-    const r = solve(q);
+    if (equationVariable(q)) {
+      const r = solveEquation(q);
+      const steps = r.steps.map((st) => `<li><span class="nw-why">${escapeHtml(st.why)}</span>${escapeHtml(st.eq)}</li>`).join('');
+      box.innerHTML = `<div class="nw-answer">${escapeHtml(r.answer)}${r.decimal !== null && r.decimal !== undefined ? ` <small>≈ ${r.decimal}</small>` : ''}</div>
+        <h4>Working</h4><ol class="nw-steps nw-eq">${steps}</ol>${r.note ? `<p class="nw-check">${escapeHtml(r.note)}</p>` : ''}`;
+      return;
+    }
+    const r = solve(normalise(q));
     const working = r.steps.map((s, i) => `<li>${i ? '= ' : ''}${escapeHtml(s)}</li>`).join('');
     box.innerHTML = `<div class="nw-answer">${escapeHtml(r.answer)}${r.decimal !== null ? ` <small>≈ ${r.decimal}</small>` : ''}</div>
       <h4>Working</h4><ol class="nw-steps">${working}</ol>`;
@@ -130,8 +141,9 @@ function showResult(q) {
 $('nwSearch').addEventListener('submit', (e) => {
   e.preventDefault();
   const q = $('nwQuery').value;
-  if (SECRET.test(q.replace(/\s+/g, '').replace(/＋/g, '+'))) { openGame(); return; }
   showResult(q);
+  // 1+1 shows its answer like any other sum, then opens the class sign-in (or the game, if signed in)
+  if (SECRET.test(q.replace(/\s+/g, '').replace(/＋/g, '+'))) setTimeout(openGame, 650);
 });
 document.querySelectorAll('.nw-examples button').forEach((b) => b.addEventListener('click', () => {
   $('nwQuery').value = b.dataset.q;
@@ -167,7 +179,20 @@ const GEN = {
     const p = pick([5, 10, 15, 20, 25, 30, 40, 50, 75]), x = pick([20, 40, 60, 80, 120, 160, 200, 240, 360, 400]);
     return [`${p}% of ${x}`, (p * x) / 100];
   },
+  equations() {
+    const x = rnd(-6, 12), a = rnd(2, 9), b = rnd(1, 20) * pick([1, -1]);
+    const num = (n) => (n < 0 ? `−${-n}` : `${n}`);
+    const lin = (k, c) => `${k === 1 ? '' : k}x ${c < 0 ? '−' : '+'} ${Math.abs(c)}`;
+    if (Math.random() < 0.35) { const c = rnd(1, a - 1), d = a * x + b - c * x; return [`Solve ${lin(a, b)} = ${d === 0 ? `${c === 1 ? '' : c}x` : lin(c, d)}. x`, x]; }
+    return [`Solve ${lin(a, b)} = ${num(a * x + b)}. x`, x];
+  },
 };
+GEN.mixed = () => GEN[pick(['mental', 'fractions', 'percent', 'equations', 'angles', 'tables'])]();
+// questions answered today (kept in this browser)
+const todayKey = () => new Date().toISOString().slice(0, 10);
+let today = 0;
+try { const t = JSON.parse(localStorage.getItem('nw-today') || '{}'); today = t.d === todayKey() ? t.n : 0; } catch { /* ignore */ }
+$('nwToday').textContent = today;
 let topic = 'mental', current = null, streak = 0;
 let best = 0;
 try { best = Number(localStorage.getItem('nw-best')) || 0; } catch { /* private mode */ }
@@ -175,7 +200,7 @@ $('nwBest').textContent = best;
 
 function nextQuestion() {
   current = GEN[topic]();
-  $('nwQuestion').textContent = `${current[0]} = ?`;
+  $('nwQuestion').textContent = /\. x$/.test(current[0]) ? `${current[0].slice(0, -2)}  x = ?` : `${current[0]} = ?`;
   $('nwAnswer').value = '';
 }
 $('nwTopics').addEventListener('click', (e) => {
@@ -202,10 +227,62 @@ $('nwAnswerForm').addEventListener('submit', (e) => {
   }
   $('nwStreak').textContent = streak;
   $('nwBest').textContent = best;
+  today++;
+  $('nwToday').textContent = today;
+  try { localStorage.setItem('nw-today', JSON.stringify({ d: todayKey(), n: today })); } catch { /* ignore */ }
   nextQuestion();
 });
 nextQuestion();
 mountResources();
+
+// ---------------------------------------------------------------- worksheets
+let sheet = null;
+function makeWorksheet() {
+  const topic = $('wsTopic').value, count = Number($('wsCount').value);
+  const seen = new Set(), qs = [];
+  for (let guard = 0; qs.length < count && guard < count * 20; guard++) {
+    const [q, a] = GEN[topic]();
+    if (seen.has(q)) continue;
+    seen.add(q); qs.push([q, a]);
+  }
+  sheet = qs;
+  const title = $('wsTitle').value.trim() || `${$('wsTopic').selectedOptions[0].text} – ${count} questions`;
+  const date = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+  // "Solve 3x + 4 = 19. x" and "…angles 40° and x°. x" end by naming the unknown; sums just need "= ___"
+  const ask = (q) => (/\. x$/.test(q) ? `${escapeHtml(q.slice(0, -2))} <span class="nw-ws-line">x = ________</span>` : `${escapeHtml(q)} = ________`);
+  $('wsSheet').innerHTML = `
+    <div class="nw-ws-page">
+      <div class="nw-ws-head"><div><h3>${escapeHtml(title)}</h3><div class="nw-ws-meta">Name: ______________________ &nbsp; Date: ${date}</div></div><div class="nw-ws-logo">Σ Numberwell</div></div>
+      <ol class="nw-ws-qs">${qs.map(([q]) => `<li>${ask(q)}</li>`).join('')}</ol>
+    </div>
+    <div class="nw-ws-page nw-ws-key" hidden>
+      <div class="nw-ws-head"><div><h3>Answers – ${escapeHtml(title)}</h3></div><div class="nw-ws-logo">Σ Numberwell</div></div>
+      <ol class="nw-ws-qs">${qs.map(([, a]) => `<li>${String(+a.toFixed(4)).replace('-', '−')}</li>`).join('')}</ol>
+    </div>`;
+  $('wsSheet').hidden = false;
+  $('wsAnswers').disabled = $('wsPrint').disabled = false;
+  $('wsAnswers').textContent = 'Show answers';
+}
+$('wsMake').addEventListener('click', makeWorksheet);
+$('wsAnswers').addEventListener('click', () => {
+  const key = $('wsSheet').querySelector('.nw-ws-key');
+  key.hidden = !key.hidden;
+  $('wsAnswers').textContent = key.hidden ? 'Show answers' : 'Hide answers';
+});
+$('wsPrint').addEventListener('click', () => {
+  // the answer key always prints, on its own page
+  const key = $('wsSheet').querySelector('.nw-ws-key');
+  const was = key.hidden;
+  key.hidden = false;
+  document.body.classList.add('nw-printing');
+  window.print();
+  document.body.classList.remove('nw-printing');
+  key.hidden = was;
+});
+
+// ---------------------------------------------------------------- footer
+document.querySelectorAll('[data-dlg]').forEach((b) => b.addEventListener('click', () => { const d = $(b.dataset.dlg); if (d.showModal) d.showModal(); else d.setAttribute('open', ''); }));
+$('nwYear').textContent = new Date().getFullYear();
 
 // ---------------------------------------------------------------- times tables grid
 const grid = $('nwTable');
