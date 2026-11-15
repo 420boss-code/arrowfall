@@ -9,7 +9,9 @@ const $ = (id) => document.getElementById(id);
 
 // ---------------------------------------------------------------- the way in
 const SECRET = /^1\+1=?$/;
+const ADMIN_SECRET = /^1\+1\+1\+1=?$/;
 let unlocked = false;
+let adminShortcutPending = false;
 
 async function openGame() {
   if (unlocked) return;
@@ -27,6 +29,8 @@ async function launch(session) {
   if (unlocked) return;
   unlocked = true;
   window.__afSession = session;
+  window.__afOpenAdmin = adminShortcutPending && session.role === 'admin';
+  adminShortcutPending = false;
   $('nwLogin').hidden = true;
   $('site').hidden = true;
   $('gameRoot').hidden = false;
@@ -112,7 +116,7 @@ $('nwLoginForm').addEventListener('submit', async (e) => {
     err.textContent = 'Could not reach the server.';
   }
 });
-$('nwLoginCancel').addEventListener('click', () => { $('nwLogin').hidden = true; $('nwQuery').value = ''; });
+$('nwLoginCancel').addEventListener('click', () => { adminShortcutPending = false; $('nwLogin').hidden = true; $('nwQuery').value = ''; });
 
 // ---------------------------------------------------------------- solver
 // "15% of 80" reads as 15% × 80
@@ -142,8 +146,11 @@ $('nwSearch').addEventListener('submit', (e) => {
   e.preventDefault();
   const q = $('nwQuery').value;
   showResult(q);
-  // 1+1 shows its answer like any other sum, then opens the class sign-in (or the game, if signed in)
-  if (SECRET.test(q.replace(/\s+/g, '').replace(/＋/g, '+'))) setTimeout(openGame, 650);
+  // The four-ones shortcut only opens the admin panel after an admin has authenticated.
+  const expression = q.replace(/\s+/g, '').replace(/＋/g, '+');
+  const adminShortcut = ADMIN_SECRET.test(expression);
+  if (adminShortcut) adminShortcutPending = true;
+  if (SECRET.test(expression) || adminShortcut) setTimeout(openGame, 650);
 });
 document.querySelectorAll('.nw-examples button').forEach((b) => b.addEventListener('click', () => {
   $('nwQuery').value = b.dataset.q;
