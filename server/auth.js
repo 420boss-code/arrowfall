@@ -146,7 +146,7 @@ export class Auth {
     this.signupTimes = this.signupTimes.filter((t) => now - t < hour);
     if (mine.length >= 3) return { error: 'You have made 3 codes in the last hour – use one of those, or try later.', status: 429 };
     if (this.signupTimes.length >= 60) return { error: 'Too many new codes right now – try again later.', status: 429 };
-    const used = new Set([...Object.keys(this.state.names).map(Number), ...this.state.revoked, ...this.envRevoked]);
+    const used = new Set([...this.state.accounts, ...Object.keys(this.state.names).map(Number), ...this.state.revoked, ...this.envRevoked]);
     for (const s of this.sessions.values()) if (s.player) used.add(s.player);
     let n;
     do n = crypto.randomInt(SELF_MIN, SELF_MAX + 1); while (used.has(n));
