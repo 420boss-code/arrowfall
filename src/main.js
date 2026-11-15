@@ -194,34 +194,119 @@ let today = 0;
 try { const t = JSON.parse(localStorage.getItem('nw-today') || '{}'); today = t.d === todayKey() ? t.n : 0; } catch { /* ignore */ }
 $('nwToday').textContent = today;
 let topic = 'mental', current = null, streak = 0;
-let best = 0;
+let best = 0, quiz = null, quizTimer = null, quizSummary = '', answered = false;
 try { best = Number(localStorage.getItem('nw-best')) || 0; } catch { /* private mode */ }
 $('nwBest').textContent = best;
+
+function updateQuizStatus() {
+  const status = $('nwQuizStatus');
+  if (!quiz) { status.textContent = quizSummary || 'Practice mode'; return; }
+  if (quiz.kind === 'timed') {
+    const left = Math.max(0, Math.ceil((quiz.endAt - Date.now()) / 1000));
+    status.textContent = `60-second challenge · ${quiz.score} correct · ${left}s left`;
+  } else status.textContent = `Question ${Math.min(quiz.answered + 1, quiz.total)} of ${quiz.total} · ${quiz.score} correct`;
+}
 
 function nextQuestion() {
   current = GEN[topic]();
   $('nwQuestion').textContent = /\. x$/.test(current[0]) ? `${current[0].slice(0, -2)}  x = ?` : `${current[0]} = ?`;
   $('nwAnswer').value = '';
+  $('nwAnswer').disabled = false;
+  $('nwCheck').disabled = false;
+  $('nwNext').hidden = true;
+  $('nwNext').textContent = 'Next question';
+  $('nwHint').hidden = true;
+  $('nwHintToggle').textContent = 'Show a hint';
+  answered = false;
+  $('nwAnswer').focus();
+  updateQuizStatus();
 }
+
+function endQuiz() {
+  if (!quiz) return;
+  clearInterval(quizTimer); quizTimer = null;
+  const finished = quiz;
+  quiz = null;
+  const total = finished.kind === 'timed' ? finished.answered : finished.total;
+  const percent = total ? Math.round(finished.score / total * 100) : 0;
+  quizSummary = `Quiz complete · ${finished.score}/${total} correct (${percent}%)`;
+  $('nwQuizStatus').textContent = quizSummary;
+  $('nwFeedback').textContent = quizSummary;
+  $('nwFeedback').className = 'nw-feedback good';
+  $('nwNext').hidden = true;
+  $('nwAnswer').disabled = true;
+  $('nwCheck').disabled = true;
+}
+
+function startQuiz(kind, total = 10) {
+  clearInterval(quizTimer); quizTimer = null;
+  quiz = { kind, total, answered: 0, score: 0, endAt: kind === 'timed' ? Date.now() + 60000 : 0 };
+  quizSummary = '';
+  $('nwFeedback').textContent = '';
+  nextQuestion();
+  if (kind === 'timed') quizTimer = setInterval(() => {
+    if (quiz && Date.now() >= quiz.endAt) endQuiz();
+    else updateQuizStatus();
+  }, 250);
+}
+$('nwQuiz10').addEventListener('click', () => startQuiz('counted', 10));
+$('nwTimedQuiz').addEventListener('click', () => startQuiz('timed'));
+$('nwNext').addEventListener('click', () => {
+  if (!answered) return;
+  if (quiz && quiz.kind === 'counted' && quiz.answered >= quiz.total) { endQuiz(); return; }
+  nextQuestion();
+});
+$('nwHintToggle').addEventListener('click', () => {
+  const hint = $('nwHint');
+  if (hint.hidden) {
+    hint.textContent = ({
+      mental: 'Split the numbers into tens and ones, or use a nearby easy number.',
+      tables: 'Use a nearby multiplication fact you already know.',
+      fractions: 'Divide the amount by the denominator, then multiply by the numerator.',
+      percent: 'Find 10% first, then scale it up or down to the percentage asked.',
+      equations: 'Undo the same operations on both sides until x is on its own.',
+      angles: 'Use the total: a straight line is 180°, a triangle 180°, and around a point 360°.',
+      trig: 'Use the special-angle values on the unit circle.',
+    })[topic];
+    hint.hidden = false;
+    $('nwHintToggle').textContent = 'Hide hint';
+  } else {
+    hint.hidden = true;
+    $('nwHintToggle').textContent = 'Show a hint';
+  }
+});
 $('nwTopics').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
   topic = b.dataset.topic;
   document.querySelectorAll('#nwTopics button').forEach((x) => x.classList.toggle('on', x === b));
   $('nwFeedback').textContent = '';
+  if (quiz) { quizSummary = ''; }
   nextQuestion();
 });
 $('nwAnswerForm').addEventListener('submit', (e) => {
   e.preventDefault();
-  const given = Number($('nwAnswer').value.replace(/[−–]/g, '-').trim());
+  if (answered || !current) return;
+  const raw = $('nwAnswer').value.replace(/[−–]/g, '-').trim();
+  const given = Number(raw);
   const fb = $('nwFeedback');
-  if (Math.abs(given - current[1]) < 1e-9) {
+  if (!raw || !Number.isFinite(given)) { fb.textContent = 'Enter a number to check your answer.'; fb.className = 'nw-feedback bad'; return; }
+  const correct = Math.abs(given - current[1]) < 1e-9;
+  answered = true;
+  $('nwAnswer').disabled = true;
+  $('nwCheck').disabled = true;
+  $('nwNext').hidden = false;
+  if (quiz) {
+    quiz.answered++;
+    if (correct) quiz.score++;
+  }
+  if (correct) {
     streak++;
     if (streak > best) { best = streak; try { localStorage.setItem('nw-best', best); } catch { /* ignore */ } }
     fb.textContent = pick(['Correct!', 'Spot on.', 'Nicely done.', 'Yes – keep going!']);
     fb.className = 'nw-feedback good';
   } else {
-    fb.textContent = `Not quite: ${current[0]} = ${current[1]}.`;
+    fb.textContent = `Not quite: ${current[0]} = ${current[1]}. Try the next one.`;
     fb.className = 'nw-feedback bad';
     streak = 0;
   }
@@ -230,9 +315,31 @@ $('nwAnswerForm').addEventListener('submit', (e) => {
   today++;
   $('nwToday').textContent = today;
   try { localStorage.setItem('nw-today', JSON.stringify({ d: todayKey(), n: today })); } catch { /* ignore */ }
-  nextQuestion();
+  if (quiz && quiz.kind === 'counted' && quiz.answered >= quiz.total) $('nwNext').textContent = 'See results';
+  updateQuizStatus();
 });
 nextQuestion();
+
+// Live percentage tool
+function updatePercentTool() {
+  const rate = Number($('pctRate').value), amount = Number($('pctAmount').value), action = $('pctAction').value;
+  const out = $('pctResult');
+  if (!Number.isFinite(rate) || !Number.isFinite(amount)) { out.textContent = 'Enter valid numbers to see the result.'; return; }
+  let result, formula;
+  if (action === 'of') { result = amount * rate / 100; formula = `${rate}% × ${amount}`; }
+  else if (action === 'increase') { result = amount * (1 + rate / 100); formula = `${amount} × (1 + ${rate}/100)`; }
+  else if (action === 'decrease') { result = amount * (1 - rate / 100); formula = `${amount} × (1 − ${rate}/100)`; }
+  else {
+    const factor = 1 + rate / 100;
+    if (factor === 0) { out.textContent = 'A 100% decrease cannot be reversed from zero.'; return; }
+    result = amount / factor; formula = `${amount} ÷ (1 + ${rate}/100)`;
+  }
+  const answer = String(Number(result.toFixed(6)));
+  out.textContent = `${formula} = ${answer}`;
+}
+['pctAction', 'pctRate', 'pctAmount'].forEach((id) => $(id).addEventListener('input', updatePercentTool));
+$('pctAction').addEventListener('change', updatePercentTool);
+updatePercentTool();
 mountResources();
 
 // ---------------------------------------------------------------- worksheets
