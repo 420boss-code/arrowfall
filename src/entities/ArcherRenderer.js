@@ -7,6 +7,7 @@ import { CONFIG } from '../config.js';
 import { clamp, lerp, wrapAngle } from '../core/utils.js';
 import { arrowGeometry } from '../combat/Projectiles.js';
 import { COSMETICS } from '../core/items.js';
+import { voxelBowGeometry, clothTexture, faceTexture, skinTexture, hairTexture } from '../world/pixelArt.js';
 
 const C = CONFIG.colours;
 const PARTS = ['hips', 'torso', 'head', 'hood', 'uArmL', 'fArmL', 'uArmR', 'fArmR', 'thighL', 'shinL', 'thighR', 'shinR',
@@ -44,35 +45,27 @@ const BOW_WOOD = new THREE.Color(0x6b4423), WHITE = new THREE.Color(1, 1, 1);
 const HOOD = PARTS.indexOf('hood'), TORSO = PARTS.indexOf('torso');
 const _cc = new THREE.Color();
 
+// Blocky look: a bow built from small cubes (tips at y ±0.62, belly toward -Z), coloured by vertex
+// shades that the bow's wood colour tints.
 export function bowGeometry() {
-  // A recurve-ish arc along local Y, belly toward -Z, tips at ±0.62 Y.
-  const pts = [];
-  const n = 10;
-  for (let i = 0; i <= n; i++) {
-    const t = i / n * 2 - 1;
-    const y = t * 0.62;
-    const z = -0.14 * (1 - t * t) + 0.04 * Math.pow(Math.abs(t), 6);
-    pts.push(new THREE.Vector3(0, y, z));
-  }
-  const curve = new THREE.CatmullRomCurve3(pts);
-  const g = new THREE.TubeGeometry(curve, 12, 0.022, 4, false);
-  g.deleteAttribute('uv');
-  return g;
+  return voxelBowGeometry();
 }
+
+const VISUAL = typeof document !== 'undefined';
 
 export class ArcherRenderer {
   constructor(scene, archers, props = null) {
     this.archers = archers;
     this.max = archers.length;
     const boxGeo = new THREE.BoxGeometry(1, 1, 1);
-    boxGeo.deleteAttribute('uv');
-    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    // blocky look: a speckled pixel cloth over every body box (tinted per part by the instance colour)
+    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff, map: VISUAL ? clothTexture() : null });
     this.boxes = new THREE.InstancedMesh(boxGeo, mat, this.max * NP);
     this.boxes.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.boxes.castShadow = true;
     this.boxes.receiveShadow = true;
     this.boxes.frustumCulled = false;
-    this.bows = new THREE.InstancedMesh(bowGeometry(), new THREE.MeshLambertMaterial({ color: 0xffffff }), this.max);
+    this.bows = new THREE.InstancedMesh(bowGeometry(), new THREE.MeshLambertMaterial({ color: 0xffffff, vertexColors: true }), this.max);
     for (let i = 0; i < this.max; i++) this.bows.setColorAt(i, BOW_WOOD);
     this.bows.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.bows.castShadow = true;
@@ -86,7 +79,15 @@ export class ArcherRenderer {
     for (let i = 0; i < this.max; i++) this.knives.setColorAt(i, WHITE);
     this.handArrows = mk(arrowGeometry());
     this.handArrows.castShadow = false;
-    scene.add(this.boxes, this.bows, this.knives, this.quivers, this.handArrows);
+    // heads: a cube with a pixel face at the front (-Z), hair at the back and top, skin at the sides
+    const hm = (t) => new THREE.MeshLambertMaterial({ color: 0xffffff, map: VISUAL ? t : null });
+    const skin = hm(VISUAL ? skinTexture() : null), hair = hm(VISUAL ? hairTexture() : null), face = hm(VISUAL ? faceTexture() : null);
+    this.heads = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), [skin, skin, hair, skin, hair, face], this.max);
+    this.heads.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.heads.castShadow = true;
+    this.heads.frustumCulled = false;
+    for (let i = 0; i < this.max; i++) this.heads.setColorAt(i, WHITE);
+    scene.add(this.boxes, this.bows, this.knives, this.quivers, this.handArrows, this.heads);
     this.bodyMatrices = archers.map(() => new THREE.Matrix4());
     this.baseColours = [];
     this.frame = 0;
@@ -153,12 +154,12 @@ export class ArcherRenderer {
     this.boxes.setMatrixAt(idx, _m2);
   }
 
-  _box(idx, cx, cy, cz, sx, sy, sz, rotX, world, rotY = 0, rotZ = 0) {
+  _box(idx, cx, cy, cz, sx, sy, sz, rotX, world, rotY = 0, rotZ = 0, mesh = this.boxes) {
     _m.makeRotationFromEuler(_eul.set(rotX, rotY, rotZ, 'YXZ'));
     _m.scale(_x.set(sx, sy, sz));
     _m.setPosition(cx, cy, cz);
     _m2.multiplyMatrices(world, _m);
-    this.boxes.setMatrixAt(idx, _m2);
+    mesh.setMatrixAt(idx, _m2);
   }
 
   // Two-bone IK: writes elbow into out, given shoulder s, target t, lengths a, b and pole direction.
@@ -192,6 +193,7 @@ export class ArcherRenderer {
     this.knives.instanceMatrix.needsUpdate = true;
     this.quivers.instanceMatrix.needsUpdate = true;
     this.handArrows.instanceMatrix.needsUpdate = true;
+    this.heads.instanceMatrix.needsUpdate = true;
   }
 
   // Place an instanced prop: origin at p, local -Z along dir (blade / arrow), local +Y toward up.
@@ -227,7 +229,7 @@ export class ArcherRenderer {
       // unused slot in this layout: draw nothing
       if (!a._hidden) {
         for (let k = 0; k < NP; k++) this.boxes.setMatrixAt(base + k, ZERO);
-        for (const m of [this.bows, this.knives, this.quivers, this.handArrows]) m.setMatrixAt(i, ZERO);
+        for (const m of [this.bows, this.knives, this.quivers, this.handArrows, this.heads]) m.setMatrixAt(i, ZERO);
         a._hidden = true;
       }
       this.bodyMatrices[i].makeTranslation(0, -500, 0);
@@ -328,10 +330,10 @@ export class ArcherRenderer {
       kneeR.lerp(KNEEL.kR, kneel); footR.lerp(KNEEL.fR, kneel);
     }
     const fwd = _v[22].set(0, 0, -1);
-    this._seg(base + 8, hipL, kneeL, 0.15, 0.16, fwd, world);
-    this._seg(base + 9, kneeL, footL, 0.12, 0.14, fwd, world);
-    this._seg(base + 10, hipR, kneeR, 0.15, 0.16, fwd, world);
-    this._seg(base + 11, kneeR, footR, 0.12, 0.14, fwd, world);
+    this._seg(base + 8, hipL, kneeL, 0.15, 0.15, fwd, world);
+    this._seg(base + 9, kneeL, footL, 0.145, 0.145, fwd, world);
+    this._seg(base + 10, hipR, kneeR, 0.15, 0.15, fwd, world);
+    this._seg(base + 11, kneeR, footR, 0.145, 0.145, fwd, world);
 
     // --- torso: leans with running, crouching, reaching, kneeling; tips along a hit; sways with a limp
     const lean = run * 0.25 + cb * 0.35 + pk * 0.9 + kb * 0.2 + land * 0.2 - chb * 0.15 + hlz * -0.3 * rx + Math.max(0, thrust) * 0.25;
@@ -343,20 +345,22 @@ export class ArcherRenderer {
     const neck = _v[6].set(Math.sin(sway) * torsoLen, hipY + Math.cos(lean) * Math.cos(sway) * torsoLen + breathe, -Math.sin(lean) * torsoLen);
     const pelvis = _v[7].set(0, hipY, 0);
     this._seg(base + 0, _v[8].set(0, hipY - 0.08, 0), _v[9].set(0, hipY + 0.1, 0), 0.34, 0.2, fwdH, world);
-    this._seg(base + 1, pelvis, neck, 0.38, 0.22, fwdT, world);
+    this._seg(base + 1, pelvis, neck, 0.42, 0.22, fwdT, world);
     this._seg(base + 16, _v[8].set(0, hipY + 0.06, 0), _v[9].set(0, hipY + 0.13, 0), 0.4, 0.25, fwdH, world);
     // head: aims with the bow, glances around when idle, snaps back when hit
-    const headC = _v[10].set(neck.x, neck.y + 0.16, neck.z - 0.01);
+    const headC = _v[10].set(neck.x, neck.y + 0.15, neck.z - 0.01);
+    this.boxes.setMatrixAt(base + 2, ZERO); // the head is drawn by this.heads (cube with a face)
     if (hideHead) {
-      this.boxes.setMatrixAt(base + 2, ZERO);
+      this.heads.setMatrixAt(i, ZERO);
       this.boxes.setMatrixAt(base + 3, ZERO);
     } else {
       const idle = alive ? (1 - moving) * (1 - db) * (1 - kb) * (1 - chb) : 0;
       const look = Math.sin(T * 0.37 + i * 1.7) * Math.sin(T * 0.13 + i) * 0.9 * idle;
       const nod = -a.pitch * 0.5 * db + hlz * 0.5 * rx + kb * 0.5 + pk * 0.5 - chb * 0.35;
       const tilt = -hlx * 0.4 * rx - sway * 0.5;
-      this._box(base + 2, headC.x, headC.y, headC.z, 0.21, 0.24, 0.22, nod, world, look, tilt);
-      this._box(base + 3, headC.x, headC.y + 0.07, headC.z + 0.03, 0.25, 0.16, 0.24, nod, world, look, tilt);
+      // blocky: a big cube head, the hood as a cap over the top and back
+      this._box(i, headC.x, headC.y, headC.z, 0.27, 0.27, 0.27, nod, world, look, tilt, this.heads);
+      this._box(base + 3, headC.x, headC.y + 0.115, headC.z + 0.025, 0.305, 0.1, 0.3, nod, world, look, tilt);
     }
     // quiver on the back, from the left hip up over the right shoulder, turning with the torso
     const quiverTop = _v[11].copy(neck).add(rotY(S_A, 0.12, -0.05, 0.17, tw));
@@ -460,10 +464,10 @@ export class ArcherRenderer {
       W[6].set(hlx * 0.1, 0.06, hlz * 0.1).multiplyScalar(rx);
       hdL.add(W[6]); hdR.add(W[6]); elL.addScaledVector(W[6], 0.5); elR.addScaledVector(W[6], 0.5);
     }
-    this._seg(base + 4, shL, elL, 0.11, 0.11, fwdT, world);
-    this._seg(base + 5, elL, hdL, 0.09, 0.09, fwdT, world);
-    this._seg(base + 6, shR, elR, 0.11, 0.11, fwdT, world);
-    this._seg(base + 7, elR, hdR, 0.09, 0.09, fwdT, world);
+    this._seg(base + 4, shL, elL, 0.12, 0.12, fwdT, world);
+    this._seg(base + 5, elL, hdL, 0.12, 0.12, fwdT, world);
+    this._seg(base + 6, shR, elR, 0.12, 0.12, fwdT, world);
+    this._seg(base + 7, elR, hdR, 0.12, 0.12, fwdT, world);
 
     // --- knife: in the hand while stabbing (blade along the forearm), otherwise on the right hip
     if (stabbing && alive) {
@@ -514,6 +518,8 @@ export class ArcherRenderer {
       const white = FLASH;
       for (let k = 0; k < NP; k++) this.boxes.setColorAt(base + k, flashing ? white : this.baseColours[i][k]);
       this.boxes.instanceColor.needsUpdate = true;
+      this.heads.setColorAt(i, flashing ? white : WHITE);
+      this.heads.instanceColor.needsUpdate = true;
     }
   }
 }

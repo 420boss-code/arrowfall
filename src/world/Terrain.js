@@ -2,7 +2,8 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { makeNoise2D, smoothstep, clamp, lerp, mulberry32 } from '../core/utils.js';
-import { grassTuftGeometry, flowerGeometry, windMaterial, addWind } from './foliage.js';
+import { addWind } from './foliage.js';
+import { crossQuadGeometry, grassTexture, flowerTexture, groundTexture } from './pixelArt.js';
 const WHITE = new THREE.Color(1, 1, 1);
 
 const M = CONFIG.map;
@@ -70,7 +71,11 @@ export class Terrain {
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colours, 3));
     geo.computeVertexNormals();
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    // blocky look: a 16-pixel tile per metre over the ground colours (brightened to make up for it)
+    for (let i = 0; i < colours.length; i++) colours[i] = Math.min(1, colours[i] * 1.18);
+    const tex = groundTexture();
+    tex.repeat.set(M.size, M.size);
+    const mat = new THREE.MeshLambertMaterial({ vertexColors: true, map: tex });
     this.ground = new THREE.Mesh(geo, mat);
     this.ground.receiveShadow = true;
     this.ground.matrixAutoUpdate = false;
@@ -85,34 +90,21 @@ export class Terrain {
     // larger clumps scattered through it.
     const G = CONFIG.graphics;
     this.grassTiles = [];
+    // blocky look: pixel-art tufts on crossed quads
     const baseRand = mulberry32(M.seed + 99);
+    const grassMat = addWind(new THREE.MeshLambertMaterial({ map: grassTexture(), alphaTest: 0.5, side: THREE.DoubleSide }), { amp: 0.06, gust: 0.08, twoSided: true, uniforms: this.grassUniforms });
     this._grassLayer({
       rand: baseRand,
-      total: this.grassModel ? Math.round(G.grassCount * 0.8) : G.grassCount,
-      looks: [{ geo: grassTuftGeometry(baseRand, 5), mat: windMaterial({ amp: 0.09, gust: 0.12, twoSided: true, uniforms: this.grassUniforms }) }],
-      tuftH: 1, tuftW: 1, tint: null,
+      total: Math.round(G.grassCount * 0.55),
+      looks: [{ geo: crossQuadGeometry(), mat: grassMat }],
+      tuftH: 0.55, tuftW: 0.6, tint: null, whiten: 0.1,
     });
-    const model = this.grassModel;
-    if (model) {
-      this._grassLayer({
-        rand: mulberry32(M.seed + 199),
-        total: G.grassModelCount,
-        looks: model.parts.map((part) => {
-          part.material.side = THREE.DoubleSide;
-          addWind(part.material, { amp: 0.09, gust: 0.12, twoSided: true, uniforms: this.grassUniforms });
-          return { geo: part.hi, mat: part.material };
-        }),
-        tuftH: G.grassModelHeight,
-        tuftW: (G.grassModelHeight * 1.1) / Math.max(0.3, model.width),
-        tint: G.grassModelBrightness,
-      });
-    }
     // wildflowers scattered through the field
     const rand = mulberry32(M.seed + 299);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
     const up = new THREE.Vector3(0, 1, 0), col = new THREE.Color();
-    const fgeo = flowerGeometry();
-    const fmat = windMaterial({ amp: 0.1, gust: 0.1, twoSided: true, uniforms: this.grassUniforms });
+    const fgeo = crossQuadGeometry();
+    const fmat = addWind(new THREE.MeshLambertMaterial({ map: flowerTexture(), alphaTest: 0.5, side: THREE.DoubleSide }), { amp: 0.07, gust: 0.08, twoSided: true, uniforms: this.grassUniforms });
     const flowers = new THREE.InstancedMesh(fgeo, fmat, G.flowerCount);
     const palette = [0xf4f1e6, 0xf2d34a, 0xa77ad8, 0xe98fb4, 0xf2f2f2, 0xe8b23a];
     for (let i = 0; i < G.flowerCount; i++) {
@@ -121,7 +113,7 @@ export class Terrain {
       const x = Math.cos(ca) * cr, z = Math.sin(ca) * cr;
       p.set(x, this.height(x, z) - 0.02, z);
       q.setFromAxisAngle(up, rand() * 6.28);
-      const s = 0.7 + rand() * 0.7;
+      const s = (0.7 + rand() * 0.7) * 0.42;
       sc.set(s, s, s);
       m.compose(p, q, sc);
       flowers.setMatrixAt(i, m);
@@ -133,7 +125,7 @@ export class Terrain {
     this.scene.add(flowers);
   }
 
-  _grassLayer({ rand, total, looks, tuftH, tuftW, tint }) {
+  _grassLayer({ rand, total, looks, tuftH, tuftW, tint, whiten = 0 }) {
     const TILE = 20, R = M.fieldRadius + 4;
     const tiles = new Map();
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3();
@@ -163,6 +155,7 @@ export class Terrain {
         col.offsetHSL((r4 - 0.5) * 0.03, 0, (r4 - 0.5) * 0.06);
         // a textured model carries its own greens: tint gently around white, brightened
         if (tint) col.lerp(WHITE, 0.72).multiplyScalar(tint);
+        if (whiten) col.lerp(WHITE, whiten);
         mesh.setColorAt(i, col);
         cx += x; cz += z;
       });

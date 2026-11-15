@@ -185,6 +185,15 @@ Any host that runs a long-lived Node process with WebSockets will do, for exampl
 
 **First person** is the default view. Your arms and bow are drawn in a separate pass on top of the world, so they never clip into trees. The string comes back to your cheek as you draw, the view bobs as you walk, the bow kicks on release and drops when you sprint. The HUD shows when you're crouched.
 
+## The look
+
+Archers, bows and the field have a blocky pixel-art style, all original to Arrowfall and drawn in code (`src/world/pixelArt.js`), with no image files. Every texture is shown with nearest-neighbour filtering, so texels stay crisp squares:
+- **Archers:** square limbs and a cube head with an 8×8 pixel face (hair fringe, eyes, mouth) and hair at the back. The hood is a cap in team colour, or in your marketplace hood colour. Clothes have a speckled pixel weave tinted with team colours.
+- **Bow:** built from small cubes along a stepped curve, with a darker wrapped grip and lighter tips. Marketplace finishes recolour it. The first-person arms are chunkier and pixel-textured to match.
+- **Field:** grass tufts are crossed pixel-art quads that still sway in the wind. The wildflowers are pixel sprites, and the ground has a 16-pixel tile per metre over its colours.
+
+The trees, rocks and logs keep their earlier look.
+
 ## The game
 
 - **Map:** 300 × 300 m. Dense mixed forest (pines, broadleaves, bushes, gentle hills) surrounds an open circular field 80 m across, with rocks and two fallen logs for cover. Red spawns in the west and Blue in the east.

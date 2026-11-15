@@ -7,6 +7,7 @@ import { clamp, lerp } from '../core/utils.js';
 import { bowGeometry } from './ArcherRenderer.js';
 import { arrowGeometry } from '../combat/Projectiles.js';
 import { COSMETICS } from '../core/items.js';
+import { clothTexture, skinTexture } from '../world/pixelArt.js';
 
 const BOW_SCALE = 0.74;
 const K = CONFIG.knife;
@@ -43,10 +44,11 @@ export class ViewModel {
 
     const lam = (c, extra = {}) => new THREE.MeshLambertMaterial({ color: c, ...extra });
     const box = new THREE.BoxGeometry(1, 1, 1);
-    this.mats = { sleeve: lam(0xffffff), skin: lam(CONFIG.colours.skin), string: lam(0xe8e0c8), leather: lam(CONFIG.colours.leather) };
+    // blocky look: pixel cloth on the sleeves, pixel skin on the hands
+    this.mats = { sleeve: lam(0xffffff, { map: clothTexture() }), skin: lam(0xffffff, { map: skinTexture() }), string: lam(0xe8e0c8), leather: lam(CONFIG.colours.leather, { map: clothTexture() }) };
 
     this.bowRig = new THREE.Group();
-    this.bowMat = lam(0x6b4423);
+    this.bowMat = lam(0x6b4423, { vertexColors: true });
     const bow = new THREE.Mesh(bowGeometry(), this.bowMat);
     bow.scale.setScalar(BOW_SCALE);
     bow.position.set(0, 0, 0.14 * BOW_SCALE);        // put the handle at the rig origin
@@ -174,10 +176,10 @@ export class ViewModel {
     // left arm holds the bow
     this.leftHand.position.copy(grip);
     this.leftHand.quaternion.copy(this.bowRig.quaternion);
-    this.leftHand.scale.set(0.05, 0.095, 0.065);
+    this.leftHand.scale.set(0.07, 0.1, 0.075);
     const elbowL = new THREE.Vector3(-0.3, -0.36, -0.22).lerp(new THREE.Vector3(-0.22, -0.3, -0.32), db).add(off);
-    this._segment(this.leftFore, grip.clone().add(_d.set(-0.01, -0.03, 0.03)), elbowL, 0.052);
-    this._segment(this.leftUpper, elbowL, new THREE.Vector3(-0.32, -0.6, 0.1), 0.08);
+    this._segment(this.leftFore, grip.clone().add(_d.set(-0.01, -0.03, 0.03)), elbowL, 0.08);
+    this._segment(this.leftUpper, elbowL, new THREE.Vector3(-0.32, -0.6, 0.1), 0.095);
 
     // right hand: on the string while drawing; on release it flies back out of view, reaches over the
     // shoulder to the quiver and comes back with the next arrow; otherwise it rests low
@@ -219,10 +221,10 @@ export class ViewModel {
     } else this.knife.visible = false;
     this.rightHand.position.copy(hand);
     this.rightHand.quaternion.identity();
-    this.rightHand.scale.set(0.045, 0.05, 0.06);
+    this.rightHand.scale.set(0.065, 0.065, 0.07);
     const elbowR = hand.clone().add(_d.set(0.22, -0.16, 0.2));
-    this._segment(this.rightFore, hand, elbowR, 0.05);
-    this._segment(this.rightUpper, elbowR, new THREE.Vector3(0.34, -0.55, 0.3), 0.08);
+    this._segment(this.rightFore, hand, elbowR, 0.075);
+    this._segment(this.rightUpper, elbowR, new THREE.Vector3(0.34, -0.55, 0.3), 0.095);
     const handOn = db > 0.05 || sb < 0.5 || bb > 0.05 || pk > 0.05 || kb > 0.05;
     this.rightHand.visible = this.rightFore.visible = this.rightUpper.visible = handOn;
 
