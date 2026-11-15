@@ -45,6 +45,8 @@ export class Player {
       return;
     }
     if (a.alive) {
+      this.specReady = false;
+      this.specFree = false;
       // mouse look
       const s = 0.0022 * this.sensitivity * (1 - this.zoom * 0.35);
       this.lookYaw -= input.mouseDX * s;
