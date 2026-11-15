@@ -111,6 +111,7 @@ export class Combat {
     if (!victim.remote) Combat.applyKnockback(victim, bx, bz);
     this.game.health.onDamage(victim, dmg, shooter, crit);
     Combat.hitReaction(victim, bx, bz);
+    this.game.audio.grunt(victim.pos, 0.75);
     this.game.audio.impact(weapon === 'knife' ? 'stab' : 'body', at, victim.isPlayer);
     if (shooter && shooter.isPlayer) this.game.hud.hitMarker(crit, victim.hp <= 0);
     if (victim.isPlayer) this.game.hud.damageIndicator(shooter ? shooter.pos : null);
