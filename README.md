@@ -133,7 +133,10 @@ Everyone with a player code has a **player number** (shown in the start menu and
 
 - Open **Friends** from the start or Esc menu, enter a friend's number and, if you like, a nickname.
 - Once you have **both** added each other, you see whether they are offline, online in the menus, or in a game, with its name, size and head count. A **Join** button takes you straight into their game, parties included. Until they add you back they show as "has not added you back yet", and you see nothing about them; they see nothing about you either.
-- Your list is kept in this browser (up to 100 friends). The server only keeps it in memory for working out who may see whom, and the panel refreshes every 8 seconds while open.
+- **Party invites:** while you're in an online game (a party or a server), open **Friends** from the Esc menu and press **Invite** next to any friend who has added you back and is online. They get a pop-up wherever they are – in the menus or in the middle of a match – saying who invited them and to what. **Join** (or **J** mid-match) takes them straight into your game, on your side; **Not now** dismisses it. Invites last two minutes, and you can send the same friend one every 15 seconds.
+- Joining a friend from the **Join** button in the list also puts you on their side.
+- **Hearts:** friends playing in the same game as you have a **♥** by their name in the scoreboard (Tab), the kill feed, the death recap and the end-of-round tables, and a pink "♥ name" label above their head (within 60 m, even on the other side). When a friend joins your game, "♥ name joined your game" appears, and the Friends panel marks them with a heart.
+- Your list is kept in this browser (up to 100 friends). The server only keeps it in memory for working out who may see whom, and the game checks in every 8 seconds while you're signed in, which is also how invites arrive.
 
 ## Settings
 

@@ -42,7 +42,7 @@ export class HUD {
 
   killFeed(killer, victim, headshot, weapon = 'bow') {
     const div = document.createElement('div');
-    const name = (a) => `<span class="${a.team}${a.isPlayer ? ' you' : ''}">${a.isPlayer ? 'You' : escapeHtml(a.name)}</span>`;
+    const name = (a) => `<span class="${a.team}${a.isPlayer ? ' you' : ''}">${a.isPlayer ? 'You' : escapeHtml(a.name)}${this.game.isFriend(a) ? ' <span class="heart">♥</span>' : ''}</span>`;
     div.innerHTML = killer && killer !== victim
       ? `${name(killer)} ${weapon === 'knife' ? '🗡' : headshot ? '🎯' : '➶'} ${name(victim)}`
       : `${name(victim)} fell`;
@@ -169,7 +169,7 @@ export class HUD {
   deathRecap(victim, killer) {
     const g = this.game;
     const recent = victim.damageLog.filter((h) => g.time - h.t < 12);
-    const who = (i) => { const a = g.archers[i]; return a ? (a.isPlayer ? 'You' : escapeHtml(a.name)) : 'Unknown'; };
+    const who = (i) => { const a = g.archers[i]; return a ? g.nameHtml(a) : 'Unknown'; };
     const total = recent.reduce((s, h) => s + h.dmg, 0);
     this.el.recap.innerHTML = `<h4>${killer && killer !== victim ? `Killed by ${who(killer.idx)}` : 'You fell'}</h4>` +
       recent.map((h) => `<div class="row2"><span>${who(h.s)}</span><span class="${h.crit ? 'crit' : ''}">${h.dmg}${h.crit ? ' critical' : ''}</span></div>`).join('') +
@@ -187,7 +187,7 @@ export class HUD {
     const rows = (team ? this.game.teams[team] : this.game.archers).filter((a) => a.active).sort((a, b) => b.stats.kills - a.stats.kills || b.stats.damage - a.stats.damage);
     const tr = rows.map((a) => {
       const acc = a.stats.shots ? Math.round((a.stats.hits / a.stats.shots) * 100) : 0;
-      return `<tr class="${a.alive ? '' : 'dead'} ${a.isPlayer ? 'you' : ''}"><td>${a.isPlayer ? 'You' : escapeHtml(a.name) + (a.human ? ' ★' : '')}</td><td>${a.stats.kills}</td><td>${a.stats.deaths}</td><td>${acc}%</td><td>${Math.round(a.stats.damage)}</td></tr>`;
+      return `<tr class="${a.alive ? '' : 'dead'} ${a.isPlayer ? 'you' : ''}"><td>${this.game.nameHtml(a)}</td><td>${a.stats.kills}</td><td>${a.stats.deaths}</td><td>${acc}%</td><td>${Math.round(a.stats.damage)}</td></tr>`;
     }).join('');
     const head = !team ? 'Free-for-all' : `${team === 'blue' ? 'Blue' : 'Red'} – ${this.game.roundWins[team]} round${this.game.roundWins[team] === 1 ? '' : 's'}`;
     return `<div><h3 class="${team || ''}">${head}</h3>

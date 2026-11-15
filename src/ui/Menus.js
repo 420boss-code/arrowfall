@@ -109,6 +109,22 @@ export class Menus {
       try { const r = await this._admin('/api/admin/guests', { open: e.target.checked }); this.admStatus(r.open ? 'Guests can now play without a code.' : 'Guest play switched off: every guest has been logged out.'); this.refreshAdmin(); } catch (err) { this.admStatus(err.message, true); }
     });
     $('admFAdd').addEventListener('click', () => this.addFaction());
+
+    // ---- friends in the background: presence, party invites, and hearts for friends in your game
+    this.friendStatus = {};
+    this.dismissedInvites = new Set();
+    this.invites = [];
+    game.friendIds = new Set(this.friends().map((f) => f.id));
+    $('invJoin').addEventListener('click', () => this.acceptInvite());
+    $('invNo').addEventListener('click', () => this.dismissInvite());
+    window.addEventListener('keydown', (e) => {
+      // in the middle of a game the mouse is captured: J accepts the invite on screen
+      if (e.code === 'KeyJ' && !$('inviteCard').classList.contains('hidden') && game.state === 'playing' && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement && document.activeElement.tagName)) this.acceptInvite();
+    });
+    if (this.session && this.session.player) {
+      this.pollFriends();
+      this.socialTimer = setInterval(() => this.pollFriends(), 8000);
+    }
   }
 
   get isGuest() { return !!(this.session && this.session.role === 'guest'); }
@@ -170,11 +186,8 @@ export class Menus {
     this._openPanel('friendsMenu', from);
     $('frMe').textContent = this.session && this.session.player ? this.session.player : '–';
     $('frStatus').textContent = '';
-    this.friendStatus = this.friendStatus || {};
     this.renderFriends();
     this.pollFriends();
-    clearInterval(this.friendTimer);
-    this.friendTimer = setInterval(() => this.pollFriends(), 8000);
   }
 
   addFriend() {
@@ -188,6 +201,7 @@ export class Menus {
     if (list.length >= 100) { st.textContent = 'Your list is full (100 friends).'; return; }
     list.push({ id, nick: $('frNick').value.trim().slice(0, 20) });
     this.saveFriends(list);
+    this.game.friendIds = new Set(list.map((f) => f.id));
     $('frNum').value = ''; $('frNick').value = '';
     st.textContent = `Added ${fmtNum(id)}. Ask them to add your number, ${this.session.player}, too.`;
     this.renderFriends();
@@ -195,16 +209,59 @@ export class Menus {
   }
 
   async pollFriends() {
+    const panel = !$('friendsMenu').classList.contains('hidden');
     try {
       const r = await fetch('/api/friends', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: this.friends().map((f) => f.id) }) });
       if (r.status === 401) { location.reload(); return; }
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || 'Could not check on your friends.');
       this.friendStatus = Object.fromEntries(data.friends.map((f) => [f.id, f]));
-      this.renderFriends();
+      this.invites = data.invites || [];
+      this.showInvite();
+      if (panel) this.renderFriends();
     } catch (e) {
-      $('frStatus').textContent = e.message && !/fetch/i.test(e.message) ? e.message : 'Friends need the online server.';
+      if (panel) $('frStatus').textContent = e.message && !/fetch/i.test(e.message) ? e.message : 'Friends need the online server.';
     }
+  }
+
+  // ---------------------------------------------------------------- party invites
+  nickFor(id) { const f = this.friends().find((x) => x.id === id); return f && f.nick ? f.nick : null; }
+
+  showInvite() {
+    const inv = this.invites.find((v) => !this.dismissedInvites.has(v.id) && (!this.currentRoom || this.currentRoom.id !== v.room));
+    this.shownInvite = inv || null;
+    $('inviteCard').classList.toggle('hidden', !inv);
+    if (!inv) return;
+    const who = escapeHtml(this.nickFor(inv.from) || inv.fromName || fmtNum(inv.from));
+    $('invText').innerHTML = `<b>♥ ${who}</b> invited you to ${inv.party ? 'their party' : `<b>${escapeHtml(inv.roomName)}</b>`}<small>${escapeHtml(inv.layout)}${inv.party ? ` · code ${escapeHtml(inv.room)}` : ''}</small>`;
+    $('invHint').textContent = this.game.state === 'playing' ? 'Press J to join, or Esc to use the mouse.' : '';
+  }
+
+  async dismissInvite(inv = this.shownInvite) {
+    if (!inv) return;
+    this.dismissedInvites.add(inv.id);
+    this.showInvite();
+    try { await fetch('/api/invites', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: inv.id }) }); } catch { /* offline */ }
+  }
+
+  acceptInvite() {
+    const inv = this.shownInvite;
+    if (!inv) return;
+    this.dismissInvite(inv);
+    for (const id of ['friendsMenu', 'settingsMenu', 'marketMenu', 'adminMenu']) $(id).classList.add('hidden');
+    if (this.game.state !== 'menu') this.game.quitToMenu();
+    this.showServers();
+    this.join(inv.room, inv.from);
+  }
+
+  async invite(to, btn) {
+    try {
+      const r = await fetch('/api/invite', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ to }) });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || 'Could not send the invite.');
+      $('frStatus').textContent = `Invite sent to ${this.nickFor(to) || fmtNum(to)}. It lasts two minutes.`;
+      if (btn) { btn.textContent = 'Invited'; btn.disabled = true; }
+    } catch (e) { $('frStatus').textContent = e.message; }
   }
 
   renderFriends() {
@@ -217,11 +274,15 @@ export class Menus {
       const text = s.status === 'playing' ? `in ${s.room.party ? 'a party' : escapeHtml(s.room.name)} · ${escapeHtml(s.room.layout)} · ${s.room.humans}/${s.room.max}`
         : s.status === 'online' ? 'online, in the menus' : s.status === 'offline' ? 'offline' : 'has not added you back yet';
       const canJoin = s.status === 'playing' && s.room.humans < s.room.max && (!this.currentRoom || this.currentRoom.id !== s.room.id);
+      const here = s.status === 'playing' && this.currentRoom && this.currentRoom.id === s.room.id;
+      const canInvite = this.currentRoom && !here && (s.status === 'online' || s.status === 'playing');
       return `<div class="it"><span class="presence ${s.status}"></span><span class="grow"><b>${escapeHtml(f.nick || fmtNum(f.id))}</b> <small>${f.nick ? `${fmtNum(f.id)} · ` : ''}${text}</small></span>` +
-        `${canJoin ? `<button data-fjoin="${escapeHtml(s.room.id)}">Join</button>` : ''}<button class="secondary" data-frm="${f.id}">Remove</button></div>`;
+        `${here ? '<span class="heart" title="In your game">♥</span>' : ''}${canInvite ? `<button data-finv="${f.id}">Invite</button>` : ''}${canJoin ? `<button data-fjoin="${escapeHtml(s.room.id)}" data-fwith="${f.id}">Join</button>` : ''}<button class="secondary" data-frm="${f.id}">Remove</button></div>`;
     }).join('') : '<div class="empty">No friends added yet.</div>';
+    $('frList').querySelectorAll('[data-finv]').forEach((b) => b.addEventListener('click', () => this.invite(Number(b.dataset.finv), b)));
     $('frList').querySelectorAll('[data-frm]').forEach((b) => b.addEventListener('click', () => {
       this.saveFriends(this.friends().filter((f) => f.id !== Number(b.dataset.frm)));
+      this.game.friendIds = new Set(this.friends().map((f) => f.id));
       this.renderFriends();
       this.pollFriends();
     }));
@@ -230,7 +291,7 @@ export class Menus {
       $('friendsMenu').classList.add('hidden');
       if (this.game.state !== 'menu') this.game.quitToMenu();
       this.showServers();
-      this.join(b.dataset.fjoin);
+      this.join(b.dataset.fjoin, Number(b.dataset.fwith));
     }));
   }
 
@@ -421,15 +482,16 @@ export class Menus {
     }
   }
 
-  async join(roomId) {
+  async join(roomId, withPlayer = 0) {
     const name = this.playerName();
     this.status(`Joining ${roomId}…`);
     const net = new NetClient(this.game);
     try {
       const faction = $('playerFaction').value;
       store('arrowfall-faction', faction);
-      const welcome = await net.connect(roomId, name, faction || null, this.game.market ? this.game.market.loadout() : null);
+      const welcome = await net.connect(roomId, name, faction || null, this.game.market ? this.game.market.loadout() : null, withPlayer);
       this.currentRoom = welcome.room;
+      this.showInvite(); // an invite to the game you just joined is no longer needed
       this._syncPause({ friendlyFire: welcome.match && welcome.match.ff });
       if (this.game.settings.fullscreen) this._fullscreen();
       this.game.startOnline(net, welcome, {});

@@ -608,7 +608,7 @@ export class Game {
       const dmg = a.stats.damage - src.damage, hs = a.stats.headshots - src.headshots;
       return { a, k, sh, h, dmg, hs, acc: sh ? Math.round((h / sh) * 100) : 0, score: k * 100 + dmg + hs * 25 };
     };
-    const label = (a) => (a.isPlayer ? 'You' : escapeHtml(a.name) + (a.human ? ' ★' : ''));
+    const label = (a) => this.nameHtml(a);
     const all = this.archers.filter((a) => a.active || a.stats.shots || a.stats.kills).map(rs);
     const mvp = all.slice().sort((x, y) => y.score - x.score)[0];
     const table = (team) => {
@@ -739,11 +739,25 @@ export class Game {
     this.zone.visible = this.mode === 'kotf';
   }
 
+  // A friend (someone on your friends list) playing in this game with you.
+  isFriend(a) {
+    return !!(a && a !== this.me && a.human && a.playerNo && this.friendIds && this.friendIds.has(a.playerNo));
+  }
+
+  // Name for HTML lists: "You", or the name with ★ for people and ♥ for your friends.
+  nameHtml(a) {
+    if (a.isPlayer) return 'You';
+    return escapeHtml(a.name) + (this.isFriend(a) ? ' <span class="heart" title="Your friend">♥</span>' : a.human ? ' ★' : '');
+  }
+
   _applyRoster(list) {
-    for (const [i, name, human, active, kit] of list) {
+    for (const [i, name, human, active, kit, pn] of list) {
       const a = this.archers[i];
+      const wasFriend = this.isFriend(a);
       a.human = !!human;
+      a.playerNo = human ? pn || 0 : 0;
       a.setLoadout(human ? kit : null);
+      if (!wasFriend && this.isFriend(a) && this.me && this.state === 'playing' && this.role === 'client') this.hud.centre(`<span class="heart">♥</span> ${escapeHtml(name)} joined your game`, 3);
       a.name = human ? name : a.botName;
       if (active !== undefined && !!active !== a.active) {
         a.active = !!active;

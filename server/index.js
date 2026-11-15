@@ -3,6 +3,7 @@
 //
 //   node server/index.js            (PORT env var overrides the default 8787)
 import http from 'node:http';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -135,6 +136,40 @@ function onlinePlayers() {
 
 function findPlayer(key) { return onlinePlayers().find((p) => p.key === key) || null; }
 
+// ------------------------------------------------------------------ party invites
+// Kept in memory for two minutes. Only mutual friends can invite each other, into the game the
+// sender is in right now.
+const INVITE_MS = 120_000;
+const invites = new Map();      // player number -> [{ id, from, fromName, room, at }]
+const lastInvite = new Map();   // "from>to" -> time
+function roomOfPlayer(n) {
+  for (const r of rooms.values()) for (const [ws, c] of r.clients) if (ws.player === n) return { room: r, client: c };
+  return null;
+}
+function liveInvites(n) {
+  const now = Date.now();
+  const list = (invites.get(n) || []).filter((v) => now - v.at < INVITE_MS && rooms.has(v.room));
+  if (list.length) invites.set(n, list); else invites.delete(n);
+  return list;
+}
+function sendInvite(sess, to) {
+  const from = sess.player;
+  if (!validNumber(to) || to === from) return [400, { error: 'Choose a friend to invite.' }];
+  const idx = auth.presenceIndex();
+  const them = idx.get(to), me = idx.get(from);
+  if (!them || !them.friends.has(from) || !me || !me.friends.has(to)) return [403, { error: 'You can only invite friends who have added you back.' }];
+  const where = roomOfPlayer(from);
+  if (!where) return [400, { error: 'Join a game first, then invite your friends to it.' }];
+  const key = `${from}>${to}`, now = Date.now();
+  if (now - (lastInvite.get(key) || 0) < 15_000) return [429, { error: 'Invite sent – give them a moment.' }];
+  lastInvite.set(key, now);
+  const list = liveInvites(to).filter((v) => v.from !== from).slice(-9);
+  const info = where.room.info();
+  list.push({ id: crypto.randomUUID().slice(0, 8), from, fromName: where.client.name, room: where.room.id, roomName: info.name, layout: info.layout, party: info.party, at: now });
+  invites.set(to, list);
+  return [200, { ok: true }];
+}
+
 // What a player may see about each friend: nothing unless the friend has added them back.
 const ONLINE_MS = 75_000;
 function friendStatus(me, ids) {
@@ -196,12 +231,30 @@ async function api(req, res, p, ip, sess) {
     return json(res, 200, list);
   }
   if (p === '/api/servers' && req.method === 'POST') return createFromRequest(req, res, sess);
+  if (p === '/api/invite' && req.method === 'POST') {
+    if (!sess.player) return json(res, 403, { error: 'Invites need a player code.' });
+    const body = (await bodyJson(req)) || {};
+    const [code, out] = sendInvite(sess, Number(body.to));
+    return json(res, code, out);
+  }
+  if (p === '/api/invites') {
+    if (!sess.player) return json(res, 200, { invites: [] });
+    if (req.method === 'POST') {
+      // dismiss one
+      const body = (await bodyJson(req)) || {};
+      invites.set(sess.player, liveInvites(sess.player).filter((v) => v.id !== String(body.id)));
+    }
+    const now = Date.now();
+    return json(res, 200, { invites: liveInvites(sess.player).map((v) => ({ id: v.id, from: v.from, fromName: v.fromName, room: v.room, roomName: v.roomName, layout: v.layout, party: v.party, left: Math.round((INVITE_MS - (now - v.at)) / 1000) })) });
+  }
   if (p === '/api/friends' && req.method === 'POST') {
     if (!sess.player) return json(res, 403, { error: sess.role === 'guest' ? 'Guests cannot use friends. Get a player code first.' : 'Friends need a player number (admins log in with a password).' });
     const body = (await bodyJson(req)) || {};
     const ids = [...new Set((Array.isArray(body.ids) ? body.ids : []).map(Number))].filter((n) => validNumber(n) && n !== sess.player).slice(0, 100);
     auth.setFriends(sess, ids);
-    return json(res, 200, { you: sess.player, friends: friendStatus(sess.player, ids) });
+    const now = Date.now();
+    const inv = liveInvites(sess.player).map((v) => ({ id: v.id, from: v.from, fromName: v.fromName, room: v.room, roomName: v.roomName, layout: v.layout, party: v.party, left: Math.round((INVITE_MS - (now - v.at)) / 1000) }));
+    return json(res, 200, { you: sess.player, friends: friendStatus(sess.player, ids), invites: inv });
   }
 
   // ---- admin only
@@ -318,7 +371,7 @@ wss.on('connection', (ws, req) => {
       const r = rooms.get(String(m.room || '').toUpperCase());
       if (!r) { ws.send(JSON.stringify({ t: 'error', msg: 'That server no longer exists.' })); return; }
       const faction = m.faction ? auth.faction(String(m.faction)) : null;
-      const err = r.join(ws, cleanName(m.name), faction, m.kit);
+      const err = r.join(ws, cleanName(m.name), faction, m.kit, Number(m.with) || 0);
       if (err) { ws.send(JSON.stringify({ t: 'error', msg: err })); return; }
       room = r;
       return;
@@ -365,6 +418,8 @@ setInterval(() => {
     if (!r.persistent && r.humans === 0 && now - r.emptySince > SC.emptyRoomTtl * 1000) rooms.delete(id);
   }
   for (const [ip, t] of lastCreate) if (now - t > 60_000) lastCreate.delete(ip);
+  for (const [k, t] of lastInvite) if (now - t > 60_000) lastInvite.delete(k);
+  for (const n of [...invites.keys()]) liveInvites(n);
 }, 10_000);
 
 server.listen(PORT, () => {

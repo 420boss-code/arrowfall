@@ -55,12 +55,22 @@ export class WorldOverlay {
       const ally = !g.ffa && a.team === me.team;
       const d = cam.distanceTo(a.pos);
       const recent = g.time - (a.lastHitByMe ?? -99) < 6;
-      if (ally ? d > 40 : !(recent && d < 100)) continue;
+      const friend = g.isFriend(a);
+      const bar = ally ? d <= 40 : recent && d < 100;
+      if (!bar && !(friend && d < 60)) continue;
       const sp = this._project(a.pos.x, a.pos.y + a.height + 0.45, a.pos.z);
       if (!sp) continue;
       const w = clamp(70 - d * 0.7, 34, 70) * dpr, h = 6 * dpr;
       const x = sp[0] - w / 2, y = sp[1];
       const f = clamp(a.hp / H.max, 0, 1);
+      if (!bar) {
+        // a friend on the other side: just their name and a heart
+        ctx.globalAlpha = clamp(1.5 - d / 60, 0.4, 1);
+        ctx.font = `${12 * dpr}px system-ui, sans-serif`;
+        ctx.fillStyle = '#ff8fc2';
+        ctx.fillText(`♥ ${a.name}`, sp[0], y);
+        continue;
+      }
       ctx.globalAlpha = ally ? clamp(1.4 - d / 40, 0.35, 1) : 1;
       ctx.fillStyle = 'rgba(0,0,0,0.55)';
       ctx.fillRect(x - dpr, y - dpr, w + 2 * dpr, h + 2 * dpr);
@@ -68,10 +78,10 @@ export class WorldOverlay {
       if (!ally) ctx.fillStyle = '#ff5a45';
       ctx.fillRect(x, y, w * f, h);
       if (a.regenerating || a.bandaging) { ctx.fillStyle = 'rgba(160,255,170,0.55)'; ctx.fillRect(x, y, w * f, h / 3); }
-      if (ally && d < 25) {
+      if ((ally && d < 25) || friend) {
         ctx.font = `${11 * dpr}px system-ui, sans-serif`;
-        ctx.fillStyle = '#f3efe4';
-        ctx.fillText((a.human ? '★ ' : '') + a.name + (a.bandaging ? ' ✚' : ''), sp[0], y - 4 * dpr);
+        ctx.fillStyle = friend ? '#ff8fc2' : '#f3efe4';
+        ctx.fillText((friend ? '♥ ' : a.human ? '★ ' : '') + a.name + (a.bandaging ? ' ✚' : ''), sp[0], y - 4 * dpr);
       }
     }
     ctx.globalAlpha = 1;
