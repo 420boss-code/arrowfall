@@ -278,6 +278,33 @@ export class Audio {
     });
   }
 
+  // Short, quiet exertion sounds made from filtered Web Audio oscillators.
+  grunt(pos = null, intensity = 1) {
+    if (!this.enabled || this.ctx.state !== 'running') return;
+    const sp = this._spatial(pos, 30); if (!sp) return;
+    const t = this.ctx.currentTime;
+    const out = this._out(sp.gain * 0.28 * intensity, sp.pan);
+    const o = this.ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(115 + Math.random() * 25, t);
+    o.frequency.exponentialRampToValueAtTime(78, t + 0.16);
+    const formant = this.ctx.createBiquadFilter(); formant.type = 'bandpass';
+    formant.frequency.value = 620; formant.Q.value = 2.2;
+    const g = this.ctx.createGain(); this._env(g, t, 0.025, 0.32, 0.16);
+    o.connect(formant).connect(g).connect(out); o.start(t); o.stop(t + 0.22);
+  }
+
+  breath(pos = null, intensity = 1) {
+    if (!this.enabled || this.ctx.state !== 'running') return;
+    const sp = this._spatial(pos, 30); if (!sp) return;
+    const t = this.ctx.currentTime, dur = 0.32;
+    const out = this._out(sp.gain * 0.16 * intensity, sp.pan);
+    const n = this._noise(t, dur);
+    const bp = this.ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.8;
+    bp.frequency.setValueAtTime(950, t); bp.frequency.exponentialRampToValueAtTime(520, t + dur);
+    const g = this.ctx.createGain(); this._env(g, t, 0.07, 0.22, 0.22);
+    n.connect(bp).connect(g).connect(out);
+  }
+
   // low-health heartbeat: two muffled thumps
   heartbeat() {
     if (!this.enabled || this.ctx.state !== 'running') return;

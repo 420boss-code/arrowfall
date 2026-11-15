@@ -15,7 +15,7 @@ export class HUD {
       chL: document.querySelector('#crosshair .l'), chR: document.querySelector('#crosshair .r'),
       hit: $('hitmarker'), meter: $('drawMeter'), fill: $('drawFill'), prompt: $('prompt'), centre: $('centreMsg'),
       vignette: $('damageVignette'), dmgArrow: $('dmgArrow'), hp: $('hpFill'), hpText: $('hpText'), sta: $('staFill'),
-      ammo: $('ammo'), counts: $('teamCounts'), stance: $('stance'), drawLabel: $('drawLabel'), hpChip: $('hpChip'), bandagePrompt: $('bandagePrompt'), bandageBar: $('bandageBar'), bandageFill: $('bandageFill'), recap: $('deathRecap'), arrows: $('arrowCount'), perf: $('perf'), scoreboard: $('scoreboard'),
+      ammo: $('ammo'), counts: $('teamCounts'), stance: $('stance'), drawLabel: $('drawLabel'), hpChip: $('hpChip'), bandagePrompt: $('bandagePrompt'), bandageBar: $('bandageBar'), bandageFill: $('bandageFill'), recap: $('deathRecap'), arrows: $('arrowCount'), perf: $('perf'), scoreboard: $('scoreboard'), spectateHint: $('spectateHint'),
     };
     this.cache = {};
     this.hitTimer = 0;
@@ -136,13 +136,22 @@ export class HUD {
     }
     this._set('prompt', this.el.prompt, 'text', prompt);
 
+    const spectating = !p.alive && p.deathTime >= 1.8 && !g.roundOver;
+    const targetName = g.player.spectating ? g.player.spectating.name : 'No living players';
+    const specMode = g.player.specFree
+      ? 'Free camera · WASD move · Space/Ctrl up/down · Shift faster'
+      : 'Follow camera · A/D orbit · W/S zoom';
+    this.el.spectateHint.classList.toggle('on', spectating);
+    this._set('spectateHintText', this.el.spectateHint, 'text',
+      `Spectating ${targetName} · Q/E change player · F toggle camera · ${specMode}`);
+
     // timers
     if (this.hitTimer > 0) { this.hitTimer -= dt; if (this.hitTimer <= 0) this.el.hit.className = this.el.hit.className.replace('show', ''); }
     if (this.centreTimer > 0) { this.centreTimer -= dt; if (this.centreTimer <= 0) this.el.centre.innerHTML = ''; }
     if (this.dmgTimer > 0) {
       this.dmgTimer -= dt;
       const a = clamp(this.dmgTimer / 0.6, 0, 1);
-      this.el.vignette.style.boxShadow = `inset 0 0 160px rgba(200,0,0,${0.55 * a})`;
+      this.el.vignette.style.boxShadow = `inset 0 0 160px rgba(200,0,0,${0.75 * a})`;
       if (this.dmgFrom) {
         const dx = this.dmgFrom.x - p.pos.x, dz = this.dmgFrom.z - p.pos.z;
         const ang = Math.atan2(-dx, -dz) - p.yaw;

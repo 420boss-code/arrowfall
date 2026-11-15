@@ -74,8 +74,10 @@ export class Auth {
     this.sessions = new Map();       // token id -> { role, ip, player, expires, gen, remember } (cache of live logins)
     this.attempts = new Map();       // ip -> { count, until }
     // names: player number -> label given by the admin; revoked: numbers blocked from the panel
-    this.state = { adminHash: null, adminGen: 1, names: {}, revoked: [], factions: [], bans: [] };
+    this.state = { adminHash: null, adminGen: 1, names: {}, accounts: [], revoked: [], factions: [], bans: [], adminPointsClaimed: false };
     this._load();
+    if (!Array.isArray(this.state.accounts)) this.state.accounts = [];
+    if (typeof this.state.adminPointsClaimed !== 'boolean') this.state.adminPointsClaimed = false;
   }
 
   _load() {
@@ -122,13 +124,14 @@ export class Auth {
     if (!Number.isInteger(n) || n < 1 || n > MAX_PLAYER) return { error: `Player numbers go from 1 to ${MAX_PLAYER}.` };
     const name = cleanName(label, 24, '');
     if (name) this.state.names[n] = name; else delete this.state.names[n];
+    if (!this.state.accounts.includes(n)) this.state.accounts.push(n);
     this._save();
     return { player: n, code: playerCode(this.secret, n), name, revoked: this.isRevoked(n) };
   }
 
   // The lowest number not yet named, revoked or currently logged in.
   suggestNumber() {
-    const used = new Set([...Object.keys(this.state.names).map(Number), ...this.state.revoked, ...this.envRevoked]);
+    const used = new Set([...this.state.accounts, ...Object.keys(this.state.names).map(Number), ...this.state.revoked, ...this.envRevoked]);
     for (const s of this.sessions.values()) if (s.player) used.add(s.player);
     for (let n = 1; n <= MAX_PLAYER; n++) if (!used.has(n)) return n;
     return null;
@@ -143,12 +146,13 @@ export class Auth {
     this.signupTimes = this.signupTimes.filter((t) => now - t < hour);
     if (mine.length >= 3) return { error: 'You have made 3 codes in the last hour – use one of those, or try later.', status: 429 };
     if (this.signupTimes.length >= 60) return { error: 'Too many new codes right now – try again later.', status: 429 };
-    const used = new Set([...Object.keys(this.state.names).map(Number), ...this.state.revoked, ...this.envRevoked]);
+    const used = new Set([...this.state.accounts, ...Object.keys(this.state.names).map(Number), ...this.state.revoked, ...this.envRevoked]);
     for (const s of this.sessions.values()) if (s.player) used.add(s.player);
     let n;
     do n = crypto.randomInt(SELF_MIN, SELF_MAX + 1); while (used.has(n));
     mine.push(now); this.signups.set(ip, mine); this.signupTimes.push(now);
     this.state.names[n] = cleanName(label, 24, '') || 'Self sign-up';
+    this.state.accounts.push(n);
     this._save();
     const { token, maxAge } = this.issue({ role: 'player', ip, player: n }, remember);
     return { role: 'player', player: n, code: playerCode(this.secret, n), token, maxAge };
@@ -213,7 +217,7 @@ export class Auth {
   }
 
   playerList() {
-    const nums = new Set([...Object.keys(this.state.names).map(Number), ...this.state.revoked, ...this.envRevoked]);
+    const nums = new Set([...this.state.accounts, ...Object.keys(this.state.names).map(Number), ...this.state.revoked, ...this.envRevoked]);
     return [...nums].sort((a, b) => a - b).map((n) => ({
       player: n, name: this.state.names[n] || '', code: playerCode(this.secret, n),
       revoked: this.isRevoked(n), permanent: this.envRevoked.has(n),
@@ -346,6 +350,13 @@ export class Auth {
   clearCookie() { return `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`; }
 
   // ---------------------------------------------------------------- admin settings
+  claimAdminPoints() {
+    if (this.state.adminPointsClaimed) return { error: 'The admin point grant has already been claimed.' };
+    this.state.adminPointsClaimed = true;
+    this._save();
+    return { points: 50000 };
+  }
+
   setAdminPassword(password) {
     if (typeof password !== 'string' || !/^[A-Za-z]{5}\d{2}$/.test(password)) return 'The admin password must be a 5-letter word followed by 2 digits, e.g. otter58.';
     this.state.adminHash = hash(password);

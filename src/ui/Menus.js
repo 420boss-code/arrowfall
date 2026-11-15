@@ -100,6 +100,7 @@ export class Menus {
     $('btnPauseAdmin').addEventListener('click', () => this.showAdmin('pauseMenu'));
     $('admBack').addEventListener('click', () => this.hideAdmin());
     $('admRefresh').addEventListener('click', () => this.refreshAdmin());
+    $('admGrantPoints').addEventListener('click', () => this.grantAdminPoints());
     $('admAdminBtn').addEventListener('click', () => this.changePassword('admin', 'admAdmin'));
     $('admCodeBtn').addEventListener('click', () => this.createCode());
     $('admSignup').addEventListener('change', async (e) => {
@@ -124,6 +125,10 @@ export class Menus {
     if (this.session && this.session.player) {
       this.pollFriends();
       this.socialTimer = setInterval(() => this.pollFriends(), 8000);
+    }
+    if (window.__afOpenAdmin && this.session && this.session.role === 'admin') {
+      window.__afOpenAdmin = false;
+      queueMicrotask(() => this.showAdmin('startMenu'));
     }
   }
 
@@ -327,6 +332,10 @@ export class Menus {
     try {
       const st = await this._admin('/api/admin/state');
       const item = (inner) => `<div class="it">${inner}</div>`;
+      $('admPointsState').textContent = st.pointsClaimed ? 'Already claimed on this server.' : 'One-time admin grant.';
+      $('admGrantPoints').disabled = !!st.pointsClaimed;
+      $('admRooms').innerHTML = st.rooms.length ? st.rooms.map((room) => item(
+        `<span class="grow"><b>${escapeHtml(room.name)}</b> <small>· ${room.isPublic ? 'public' : 'private'} · ${escapeHtml(room.layout)} · ${room.humans}/${room.max} players</small></span><button data-room="${escapeHtml(room.id)}" ${room.humans >= room.max ? 'disabled' : ''}>${room.humans >= room.max ? 'Full' : 'Enter'}</button>`)).join('') : '<div class="empty">No games are running.</div>';
       $('admFactions').innerHTML = st.factions.length ? st.factions.map((f) => item(
         `<span class="swatch" style="background:${escapeHtml(f.colour)}"></span><span class="grow"><b>[${escapeHtml(f.tag)}]</b> ${escapeHtml(f.name)}</span><button class="secondary" data-del="${escapeHtml(f.id)}">Delete</button>`)).join('') : '<div class="empty">No factions yet.</div>';
       $('admPlayers').innerHTML = st.players.length ? st.players.map((p) => item(
@@ -355,6 +364,25 @@ export class Menus {
       act('data-kick', '/api/admin/kick', 'Player kicked.');
       act('data-ban', '/api/admin/ban', (r) => (r.ipBan ? 'Guest logins from that address are now blocked; people with codes there are unaffected (lift it under Bans).' : 'Player banned: their code is revoked (Restore under Player codes to undo).'));
       act('data-unban', '/api/admin/unban', 'Ban lifted.');
+      $('admRooms').querySelectorAll('[data-room]').forEach((btn) => btn.addEventListener('click', () => {
+        const roomId = btn.dataset.room;
+        this.hideAdmin();
+        this.currentRoom = null;
+        this.game.quitToMenu();
+        this.join(roomId);
+      }));
+    } catch (e) { this.admStatus(e.message, true); }
+  }
+
+  async grantAdminPoints() {
+    try {
+      const r = await this._admin('/api/admin/points', {});
+      this.game.market.wallet.silver += r.points;
+      this.game.market.save();
+      this.game.market._badge();
+      $('admGrantPoints').disabled = true;
+      $('admPointsState').textContent = 'Claimed on this server.';
+      this.admStatus(`Added ${r.points.toLocaleString()} silver to this browser's marketplace wallet.`);
     } catch (e) { this.admStatus(e.message, true); }
   }
 

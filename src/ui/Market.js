@@ -10,6 +10,23 @@ export const EARN = { hit: 2, kill: 20, knifeKill: 10, survive: 10, roundWin: 30
 const $ = (id) => document.getElementById(id);
 const RARITY = { common: 'Common', rare: 'Rare', epic: 'Epic' };
 
+function marketArt(it) {
+  const ink = it.colour === undefined ? '#c58a3c' : `#${it.colour.toString(16).padStart(6, '0')}`;
+  const shapes = {
+    bow: `<path d="M95 18 Q48 50 95 82" fill="none" stroke="${ink}" stroke-width="8" stroke-linecap="round"/><path d="M95 18 L95 82" fill="none" stroke="#e2d8bc" stroke-width="2"/><path d="M84 50 L103 50" stroke="#d3b37a" stroke-width="5"/>`,
+    hood: `<path d="M95 18 C67 18 56 40 59 68 L70 83 L120 83 L131 68 C134 40 123 18 95 18Z" fill="${ink}" stroke="#d9d0bb" stroke-width="3"/><path d="M75 52 Q95 34 115 52 L108 75 L82 75Z" fill="#222923"/><path d="M82 75 Q95 65 108 75" fill="none" stroke="#d9d0bb" stroke-width="3"/>`,
+    knife: `<path d="M48 60 L116 30 L98 65 L56 72Z" fill="${ink}" stroke="#e7e4d8" stroke-width="3"/><path d="M47 60 L65 77 L51 83 L36 68Z" fill="#987044" stroke="#e7e4d8" stroke-width="2"/><path d="M64 66 L103 48" stroke="#fff" stroke-width="2" opacity=".7"/>`,
+    trail: `<path d="M30 65 C55 26 77 78 100 42 S136 34 151 26" fill="none" stroke="${ink}" stroke-width="7" stroke-linecap="round"/><circle cx="48" cy="43" r="5" fill="#fff2c7"/><circle cx="117" cy="38" r="4" fill="#fff2c7"/><path d="M78 24 l4 9 10 1-8 6 3 10-9-6-8 6 2-10-8-6 10-1Z" fill="${ink}"/>`,
+    fx: `<path d="M95 18 L103 40 L127 27 L117 51 L143 54 L119 64 L135 84 L108 76 L97 94 L90 73 L63 82 L76 60 L51 49 L80 46 L73 23Z" fill="${ink}" stroke="#f3e7c5" stroke-width="3"/><circle cx="95" cy="57" r="9" fill="#fff1bf"/>`,
+    perk: `<path d="M55 38 L95 18 L135 38 L135 70 L95 90 L55 70Z" fill="${ink}" stroke="#d8d1bd" stroke-width="3"/><path d="M55 38 L95 59 L135 38 M95 59 L95 90 M75 28 L115 49" fill="none" stroke="#e1d9c5" stroke-width="3"/><path d="M95 49 L101 56 L95 63 L89 56Z" fill="#f1c46b"/>`,
+  }[it.cat] || '';
+  return `<svg class="mkArt" viewBox="0 0 190 100" role="img" aria-label="${escapeHtml(it.name)} preview">
+    <rect x="1" y="1" width="188" height="98" rx="10" fill="#20271f" stroke="rgba(255,255,255,.12)"/>
+    <circle cx="95" cy="52" r="36" fill="${ink}" opacity=".12"/>
+    ${shapes}
+  </svg>`;
+}
+
 export class Market {
   constructor(game) {
     this.game = game;
@@ -96,6 +113,7 @@ export class Market {
       const swatch = it.cat === 'perk' ? '<span class="mkIcon">✦</span>' : `<span class="mkSwatch ${it.rainbow ? 'rainbow' : ''}" style="background:#${it.colour.toString(16).padStart(6, '0')}"></span>`;
       return `<div class="mkCard ${it.rarity}${it.was ? ' deal' : ''}">
         ${it.was ? '<span class="mkDeal">Deal of the week</span>' : ''}
+        ${marketArt(it)}
         <div class="mkTop">${swatch}<div><b>${escapeHtml(it.name)}</b><small>${SLOTS[it.cat]} · <span class="r ${it.rarity}">${RARITY[it.rarity]}</span></small></div></div>
         ${it.desc ? `<p class="mkDesc">${escapeHtml(it.desc)}</p>` : `<p class="mkDesc">${COS_DESC[it.cat]}</p>`}
         <div class="mkBuy"><span class="mkPrice">${it.was ? `<s>${it.was}</s> ` : ''}◆ ${it.price}</span>

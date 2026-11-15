@@ -265,6 +265,8 @@ async function api(req, res, p, ip, sess) {
       factions: auth.state.factions,
       bans: auth.state.bans.map((b) => ({ id: b.id, name: b.name, at: b.at, ip: maskIp(b.ip), guestOnly: !!b.guestOnly })),
       players: onlinePlayers().map(({ ws, ...rest }) => rest),
+      rooms: [...rooms.values()].map((room) => ({ ...room.info(), isPublic: room.isPublic })),
+      pointsClaimed: auth.state.adminPointsClaimed,
       codes: auth.playerList(),
       signupOpen: auth.state.signupOpen,
       nextNumber: auth.suggestNumber(),
@@ -274,6 +276,10 @@ async function api(req, res, p, ip, sess) {
   if (req.method !== 'POST') return json(res, 405, { error: 'Use POST.' });
   const body = (await bodyJson(req)) || {};
   switch (p) {
+    case '/api/admin/points': {
+      const r = auth.claimAdminPoints();
+      return r.error ? json(res, 409, r) : json(res, 200, r);
+    }
     case '/api/admin/password': {
       const err = auth.setAdminPassword(body.password);
       if (err) return json(res, 400, { error: err });

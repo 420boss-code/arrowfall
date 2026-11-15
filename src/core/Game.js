@@ -420,9 +420,11 @@ export class Game {
     else this.health.startBandage(me);
   }
 
-  spectateTarget(me) {
-    const pool = this.ffa ? this.archers : this.teams[me.team];
-    return pool.find((a) => a.alive && a.active && a !== me) || null;
+  spectateTarget(me, current = null, direction = 1) {
+    const pool = (this.ffa ? this.archers : this.teams[me.team]).filter((a) => a.alive && a.active && a !== me);
+    if (!pool.length) return null;
+    const i = pool.indexOf(current);
+    return i < 0 ? pool[0] : pool[(i + direction + pool.length) % pool.length];
   }
 
   aliveCount(team) {
@@ -761,6 +763,7 @@ export class Game {
       a.name = human ? name : a.botName;
       if (active !== undefined && !!active !== a.active) {
         a.active = !!active;
+        a._netInit = false;
         if (!a.active) { a.alive = false; a.pos.set(0, -500, 0); a.deathTime = 99; }
       }
     }
@@ -859,6 +862,7 @@ export class Game {
         const v = this.archers[e.v], s = this.archers[e.s];
         if (!v) return;
         v.hitFlash = 0.15;
+        this.audio.grunt(v.pos, 0.75);
         if (e.kb) Combat.hitReaction(v, e.kb[0], e.kb[1]);
         if (e.w === 'k') this.audio.impact('stab', v.pos, v === me);
         if (s === me) this.hud.hitMarker(!!e.h, !!e.k);

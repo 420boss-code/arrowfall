@@ -63,9 +63,9 @@ export const CONFIG = {
     bandageHeal: 35,         // HP restored over the bandaging time (stops if interrupted)
     bandageTime: 3,          // seconds kneeling; moving, drawing, jumping or being hit interrupts
     herbHeal: 40,            // healing herbs: walk over one to eat it
-    herbRegrow: 35,          // seconds for a herb to regrow
-    herbsField: 4,
-    herbsForest: 8,
+    herbRegrow: 28,          // seconds for a herb to regrow
+    herbsField: 5,
+    herbsForest: 10,
     limpBelow: 30,           // below this HP archers limp…
     limpSpeed: 0.85,         // …at this fraction of normal speed
     lowHpWarning: 30,        // heartbeat and red pulse below this

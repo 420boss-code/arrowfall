@@ -11,7 +11,7 @@
   <div id="site">
     <header class="nw-top">
       <a class="nw-logo" href="#">Σ Numberwell</a>
-      <nav><a href="#solver">Solver</a><a href="#practice">Practice</a><a href="#worksheets">Worksheets</a><a href="#resources">Resources</a><a href="#notes">Revision notes</a><a href="#tables">Times tables</a></nav>
+      <nav><a href="#solver">Solver</a><a href="#practice">Practice</a><a href="#percent-tool">Tools</a><a href="#worksheets">Worksheets</a><a href="#resources">Resources</a><a href="#notes">Revision notes</a><a href="#tables">Times tables</a></nav>
     </header>
 
     <section class="nw-hero" id="solver">
@@ -26,15 +26,36 @@
     </section>
 
     <section class="nw-card" id="practice">
-      <h2>Quick practice</h2>
+      <h2>Practice and quizzes</h2>
+      <p class="nw-sub">Practise one question at a time, or start a scored quiz. Hints are available whenever you get stuck.</p>
       <div class="nw-tabs" id="nwTopics">
         <button data-topic="mental" class="on">Mental arithmetic</button><button data-topic="tables">Times tables</button><button data-topic="fractions">Fractions of amounts</button><button data-topic="percent">Percentages</button><button data-topic="equations">Equations</button><button data-topic="angles">Angles</button><button data-topic="trig">Trig values</button>
       </div>
-      <div class="nw-q"><span id="nwQuestion"></span>
-        <form id="nwAnswerForm" autocomplete="off"><input id="nwAnswer" inputmode="decimal" aria-label="Your answer" /><button>Check</button></form>
+      <div class="nw-quiz-controls">
+        <button id="nwQuiz10" class="nw-btn">Start 10-question quiz</button>
+        <button id="nwTimedQuiz" class="nw-btn ghost">Start 60-second challenge</button>
+        <span id="nwQuizStatus" class="nw-quiz-status" aria-live="polite">Practice mode</span>
       </div>
-      <p id="nwFeedback" class="nw-feedback"></p>
+      <div class="nw-q"><span id="nwQuestion"></span>
+        <form id="nwAnswerForm" autocomplete="off"><input id="nwAnswer" inputmode="decimal" aria-label="Your answer" /><button id="nwCheck">Check</button></form>
+        <button id="nwNext" class="nw-btn ghost" type="button" hidden>Next question</button>
+      </div>
+      <div class="nw-hint-row"><button id="nwHintToggle" class="nw-link" type="button">Show a hint</button><p id="nwHint" hidden></p></div>
+      <p id="nwFeedback" class="nw-feedback" aria-live="polite"></p>
       <p class="nw-streak">Streak: <b id="nwStreak">0</b> · Best: <b id="nwBest">0</b> · Answered today: <b id="nwToday">0</b></p>
+    </section>
+
+    <section class="nw-card" id="percent-tool">
+      <h2>Percentage toolkit</h2>
+      <p class="nw-sub">Explore a percentage of an amount, a percentage change, or work backwards from a changed value.</p>
+      <div class="nw-form">
+        <label>What to calculate
+          <select id="pctAction"><option value="of">Find a percentage of an amount</option><option value="increase">Increase an amount</option><option value="decrease">Decrease an amount</option><option value="reverse">Find the original before an increase</option></select>
+        </label>
+        <label>Percentage <input id="pctRate" type="number" step="any" value="15" /></label>
+        <label>Amount <input id="pctAmount" type="number" step="any" value="240" /></label>
+      </div>
+      <div id="pctResult" class="nw-out" aria-live="polite"></div>
     </section>
 
     <section class="nw-card" id="worksheets">
