@@ -27,6 +27,13 @@ async function openGame() {
 
 async function launch(session) {
   if (unlocked) return;
+  if (adminShortcutPending && session.role !== 'admin') {
+    adminShortcutPending = false;
+    $('nwLogin').hidden = false;
+    showCard('nwLoginForm');
+    $('nwLoginErr').textContent = 'Admin sign-in is required to open the admin panel.';
+    return;
+  }
   unlocked = true;
   window.__afSession = session;
   window.__afOpenAdmin = adminShortcutPending && session.role === 'admin';
