@@ -74,8 +74,9 @@ export class Auth {
     this.sessions = new Map();       // token id -> { role, ip, player, expires, gen, remember } (cache of live logins)
     this.attempts = new Map();       // ip -> { count, until }
     // names: player number -> label given by the admin; revoked: numbers blocked from the panel
-    this.state = { adminHash: null, adminGen: 1, names: {}, revoked: [], factions: [], bans: [] };
+    this.state = { adminHash: null, adminGen: 1, names: {}, revoked: [], factions: [], bans: [], adminPointsClaimed: false };
     this._load();
+    if (typeof this.state.adminPointsClaimed !== 'boolean') this.state.adminPointsClaimed = false;
   }
 
   _load() {
@@ -346,6 +347,13 @@ export class Auth {
   clearCookie() { return `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`; }
 
   // ---------------------------------------------------------------- admin settings
+  claimAdminPoints() {
+    if (this.state.adminPointsClaimed) return { error: 'The admin point grant has already been claimed.' };
+    this.state.adminPointsClaimed = true;
+    this._save();
+    return { points: 50000 };
+  }
+
   setAdminPassword(password) {
     if (typeof password !== 'string' || !/^[A-Za-z]{5}\d{2}$/.test(password)) return 'The admin password must be a 5-letter word followed by 2 digits, e.g. otter58.';
     this.state.adminHash = hash(password);
