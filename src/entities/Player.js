@@ -25,6 +25,9 @@ export class Player {
     this.camDist = CAM.thirdPersonOffset.z;
     this.spectating = null;
     this.specYaw = 0;
+    this.specPitch = -0.35;
+    this.specDistance = 5.5;
+    this.exertT = 0;
   }
 
   update(dt, input) {
@@ -63,6 +66,8 @@ export class Player {
       if ((wantSprint && fwd > 0) || input.wasPressed('Space')) this.crouchToggle = false;
       a.crouching = this.crouchToggle || (this.crouchHold && input.down('KeyC')) || input.down('ControlLeft') || input.down('ControlRight');
       a.sprinting = wantSprint && fwd > 0 && !a.crouching && !a.drawing && a.stamina > (a.sprinting ? 0 : 8);
+      this.exertT -= dt;
+      if (a.sprinting && this.exertT <= 0) { g.audio.breath(null, 0.45); this.exertT = 3.6; }
       if (input.wasPressed('Space') && a.jump()) g.audio.footstep(g.surfaceAt(a.pos), 1.2, true);
 
       if (input.wasPressed('KeyE')) g.tryPickup(a);
@@ -92,6 +97,14 @@ export class Player {
       a.moveDir.set(0, 0);
       a.drawing = false;
       this.zoom = lerp(this.zoom, 0, clamp(dt * 10, 0, 1));
+      if (a.deathTime > 1.8) {
+        this.specYaw -= input.mouseDX * 0.0035;
+        this.specPitch = clamp(this.specPitch - input.mouseDY * 0.0035, -1.1, 0.65);
+        if (input.down('KeyA')) this.specYaw += dt * 1.5;
+        if (input.down('KeyD')) this.specYaw -= dt * 1.5;
+        if (input.down('KeyW')) this.specDistance = Math.max(2, this.specDistance - dt * 5);
+        if (input.down('KeyS')) this.specDistance = Math.min(18, this.specDistance + dt * 5);
+      }
     }
   }
 
@@ -137,9 +150,8 @@ export class Player {
     if (!a.alive) {
       // spectate: slowly orbit a living teammate (or our corpse)
       subject = this.spectating && this.spectating.alive ? this.spectating : a;
-      this.specYaw += dt * 0.15;
       yaw = this.specYaw;
-      pitch = -0.35;
+      pitch = this.specPitch;
     }
     const fp = this.firstPerson && a.alive;
     subject.eyePos(_e);
@@ -159,7 +171,7 @@ export class Player {
       if (a.pickupT > 0) cam.position.y -= Math.sin((1 - a.pickupT / 0.6) * Math.PI) * 0.35;
     } else {
       const off = CAM.thirdPersonOffset;
-      const dist = !a.alive ? 5.5 : lerp(off.z, off.z * 0.7, this.zoom);
+      const dist = !a.alive ? this.specDistance : lerp(off.z, off.z * 0.7, this.zoom);
       const side = !a.alive ? 0 : off.x;
       _p.copy(_e).addScaledVector(_r, side);
       _p.y += off.y;
