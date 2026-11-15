@@ -233,7 +233,7 @@ export class Forest {
         cl.setHSL(turn ? 0.13 + rand() * 0.05 : 0.22 + rand() * 0.08, turn ? 0.55 : 0.5, (turn ? 0.3 : 0.25) + rand() * 0.08);
       }, true));
       parts.push(make(c.bush, geos.bushHi, geos.bushLo, mats.bush, (b, cl) => {
-        p.set(b.x, b.y + b.h * 0.35, b.z); q.setFromAxisAngle(up, b.rot); s.set(b.r, b.h, b.r);
+        p.set(b.x, b.y + b.h * 0.75, b.z); q.setFromAxisAngle(up, b.rot); s.set(b.r, b.h, b.r);
         cl.setHSL(0.27 + rand() * 0.06, 0.45, 0.22 + rand() * 0.08);
       }, false));
       parts.push(make(c.fern, geos.fern, null, mats.fern, (f, cl) => {
