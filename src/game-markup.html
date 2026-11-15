@@ -136,9 +136,11 @@
   <div id="adminMenu" class="overlay menu hidden">
     <div class="panel wide admin">
       <h2>Admin</h2>
+      <p class="note">Admin tools are available only while signed in with the admin password.</p>
+      <div class="row"><button id="admGrantPoints" class="secondary">Claim 50,000 silver</button><small id="admPointsState" class="note"></small></div>
       <h3>Passwords</h3>
       <div class="row"><label>New admin password</label><input id="admAdmin" type="password" autocomplete="new-password" placeholder="5 letters + 2 digits, e.g. otter58" /><button id="admAdminBtn" class="secondary small">Change</button></div>
-      <h3>Player codes</h3>
+      <h3>Accounts</h3>
       <div class="row"><label for="admSignup">Anyone can make a code</label><input type="checkbox" id="admSignup" /></div>
       <div class="row"><label for="admGuests">Guests can play without a code</label><input type="checkbox" id="admGuests" /></div>
       <div class="row"><label>Player number</label><input id="admNum" type="number" min="1" max="999" class="tag" /><input id="admNumName" placeholder="Name (optional)" maxlength="24" /><button id="admCodeBtn" class="secondary small">Create code</button></div>
@@ -147,6 +149,8 @@
       <h3>Factions</h3>
       <div id="admFactions" class="admList"></div>
       <div class="row"><input id="admFName" placeholder="Faction name" maxlength="24" /><input id="admFTag" placeholder="TAG" maxlength="5" class="tag" /><input id="admFColour" type="color" value="#d9b45a" /><button id="admFAdd" class="secondary small">Create</button></div>
+      <h3>Current games</h3>
+      <div id="admRooms" class="admList"></div>
       <h3>Players online</h3>
       <div id="admPlayers" class="admList"></div>
       <h3>Bans</h3>
