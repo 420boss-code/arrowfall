@@ -761,6 +761,7 @@ export class Game {
       a.name = human ? name : a.botName;
       if (active !== undefined && !!active !== a.active) {
         a.active = !!active;
+        a._netInit = false;
         if (!a.active) { a.alive = false; a.pos.set(0, -500, 0); a.deathTime = 99; }
       }
     }
@@ -859,6 +860,7 @@ export class Game {
         const v = this.archers[e.v], s = this.archers[e.s];
         if (!v) return;
         v.hitFlash = 0.15;
+        this.audio.grunt(v.pos, 0.75);
         if (e.kb) Combat.hitReaction(v, e.kb[0], e.kb[1]);
         if (e.w === 'k') this.audio.impact('stab', v.pos, v === me);
         if (s === me) this.hud.hitMarker(!!e.h, !!e.k);
