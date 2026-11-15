@@ -284,6 +284,10 @@ export class Forest {
     const rockMat = new THREE.MeshLambertMaterial({ color: 0x8a8a84 });
     const logMat = new THREE.MeshLambertMaterial({ color: 0x5b4330 });
     const endMat = new THREE.MeshLambertMaterial({ color: 0xa88a5e });
+    const crateMat = new THREE.MeshLambertMaterial({ color: 0x59634b });
+    const crateBoardMat = new THREE.MeshLambertMaterial({ color: 0x72775a });
+    const crateTrimMat = new THREE.MeshLambertMaterial({ color: 0x343a31 });
+    const crateMarkMat = new THREE.MeshLambertMaterial({ color: 0xc58a3c });
     const group = new THREE.Group();
     const rocks = [];
     for (let i = 0; i < F.rocksInField; i++) {
@@ -308,6 +312,38 @@ export class Forest {
       this._addObstacle({ kind: K_SPHERE, x: rk.x, y: y + rk.s * 0.3, z: rk.z, r: rk.s * 1.05, solid: true });
     }
     this.fieldRocks = rocks.slice(0, F.rocksInField);
+
+    // Tactical field crates: original low-poly cover props with simple stencil markings.
+    const crateBody = new THREE.BoxGeometry(1.6, 1.3, 1.4);
+    const crateBoard = new THREE.BoxGeometry(1.48, 0.12, 0.035);
+    const crateRail = new THREE.BoxGeometry(0.11, 1.34, 0.08);
+    const crateMarkH = new THREE.BoxGeometry(0.48, 0.07, 0.025);
+    const crateMarkV = new THREE.BoxGeometry(0.07, 0.34, 0.025);
+    const crates = [[-27, -19, 0.2], [25, -23, -0.35], [-24, 25, -0.25], [27, 19, 0.4]];
+    for (const [x, z, turn] of crates) {
+      const y = this.terrain.height(x, z), crate = new THREE.Group();
+      const piece = (geo, mat, px, py, pz) => {
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(px, py, pz);
+        mesh.castShadow = mesh.receiveShadow = true;
+        crate.add(mesh);
+      };
+      piece(crateBody, crateMat, 0, 0.67, 0);
+      piece(crateBoard, crateBoardMat, 0, 0.28, 0.715);
+      piece(crateBoard, crateBoardMat, 0, 0.62, 0.715);
+      piece(crateBoard, crateBoardMat, 0, 0.96, 0.715);
+      piece(crateBoard, crateBoardMat, 0, 0.28, -0.715);
+      piece(crateBoard, crateBoardMat, 0, 0.62, -0.715);
+      piece(crateBoard, crateBoardMat, 0, 0.96, -0.715);
+      for (const px of [-0.75, 0.75]) piece(crateRail, crateTrimMat, px, 0.67, 0.69);
+      piece(crateMarkH, crateMarkMat, 0, 0.69, 0.739);
+      piece(crateMarkV, crateMarkMat, 0, 0.69, 0.74);
+      crate.position.set(x, y, z);
+      crate.rotation.y = turn;
+      group.add(crate);
+      this._addObstacle({ kind: K_TRUNK, x, y: y + 1, z, top: y + 1.35, r: 0.95, solid: true });
+    }
+
     // logs
     this.logs = [];
     for (let i = 0; i < F.logsInField; i++) {
