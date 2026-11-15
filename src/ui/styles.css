@@ -125,3 +125,36 @@ table.servers td, table.servers th { text-align: left; }
 .newcode b { font: 600 22px/1.2 ui-monospace, Menlo, monospace; letter-spacing: 2px; color: #ffe9a8; }
 .admList code { font: 600 14px ui-monospace, Menlo, monospace; letter-spacing: 1px; color: #ffe9a8; }
 .admList .revoked { color: #ff8a70; }
+
+/* ---- layouts, parties, settings, friends */
+.menu .panel { max-height: 94vh; overflow-y: auto; }
+.whoami { margin: -10px 0 6px; font-size: 13px; opacity: .7; }
+.layoutPicker { margin: 6px 0 4px; }
+.layoutPicker .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.layoutPicker .chip { width: auto; margin: 0; padding: 7px 13px; font-size: 14px; background: #2c3329; color: var(--ink); border: 1px solid rgba(217,180,90,.25); }
+.layoutPicker .chip.on { background: var(--accent); color: #1b1b10; border-color: var(--accent); }
+.layoutPicker .custom { margin-top: 4px; }
+.layoutPicker .note { margin-top: 6px; font-size: 13px; }
+.layoutPicker small { opacity: .6; }
+input.num { width: 64px; flex: 0 0 64px; background: #222b22; color: var(--ink); border: 1px solid #556; padding: 5px 6px; border-radius: 4px; font-size: 15px; }
+.vs { display: flex; align-items: center; gap: 8px; }
+.row .val { min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; opacity: .85; }
+.btnRow { display: flex; gap: 10px; }
+.btnRow button { flex: 1; }
+.newcode.party b { font-size: 30px; letter-spacing: 4px; }
+.newcode.party small { display: block; margin-top: 4px; opacity: .75; }
+.newcode.party .btnRow button { margin-top: 10px; }
+#pParty { display: flex; align-items: center; gap: 10px; }
+#pParty button { margin: 0 0 0 auto; }
+.panel.settings { min-width: 460px; }
+.panel.settings h3 { margin-top: 14px; }
+.panel.settings .row { margin: 6px 0; }
+.yourNum { font-size: 16px; display: flex; align-items: center; gap: 10px; }
+.yourNum b { font: 600 22px ui-monospace, Menlo, monospace; color: #ffe9a8; letter-spacing: 1px; }
+.yourNum button { margin: 0; }
+#friendsMenu .row input { flex: 1; }
+#friendsMenu .row button { margin: 0; }
+.presence { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 10px; background: #666; }
+.presence.online { background: #5fd35a; }
+.presence.playing { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.presence.pending { background: transparent; border: 1px dashed #888; }

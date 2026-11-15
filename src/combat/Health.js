@@ -54,6 +54,14 @@ export class Health {
         this.heal(a, (H.bandageHeal / H.bandageTime) * dt);
         if (a.bandageT >= H.bandageTime || a.hp >= H.max) this.stopBandage(a);
       }
+      // resupply: standing near your own spawn point slowly refills the quiver
+      if (a.homeX !== undefined && a.arrows < CONFIG.archer.quiver) {
+        const dx = a.pos.x - a.homeX, dz = a.pos.z - a.homeZ;
+        if (dx * dx + dz * dz < H.resupplyRadius * H.resupplyRadius) {
+          a._resupply = (a._resupply || 0) + dt;
+          if (a._resupply >= H.resupplyEvery) { a._resupply = 0; a.arrows++; }
+        } else a._resupply = 0;
+      }
       a.regenerating = !a.bandaging && a.hp < H.max && g.time - a.lastHurt > H.regenDelay;
       if (a.regenerating) this.heal(a, H.regenRate * dt);
       // herbs: walk over one while hurt to eat it

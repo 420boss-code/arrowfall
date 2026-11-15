@@ -48,9 +48,11 @@ export class WorldOverlay {
 
     // health bars over heads
     ctx.textAlign = 'center';
-    for (const a of g.archers) {
+    const showBars = !g.settings || g.settings.healthBars !== false;
+    for (const a of showBars ? g.archers : []) {
       if (!a.alive || a === me) continue;
-      const ally = a.team === me.team;
+      if (!a.active) continue;
+      const ally = !g.ffa && a.team === me.team;
       const d = cam.distanceTo(a.pos);
       const recent = g.time - (a.lastHitByMe ?? -99) < 6;
       if (ally ? d > 40 : !(recent && d < 100)) continue;

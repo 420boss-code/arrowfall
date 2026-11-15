@@ -42,7 +42,7 @@ export class Player {
       // mouse look
       const s = 0.0022 * this.sensitivity * (1 - this.zoom * 0.35);
       this.lookYaw -= input.mouseDX * s;
-      this.lookPitch = clamp(this.lookPitch - input.mouseDY * s, -1.35, 1.35);
+      this.lookPitch = clamp(this.lookPitch - input.mouseDY * s * (this.invertY ? -1 : 1), -1.35, 1.35);
       // sway after holding full draw too long
       const sway = a.swayAmount() * DEG;
       this.swayT += dt;
@@ -58,9 +58,10 @@ export class Player {
       a.moveDir.set(-sy0 * fwd + cy0 * str, -cy0 * fwd - sy0 * str);
       // crouch: C toggles, Ctrl is hold-to-crouch; sprinting or jumping stands you up
       const wantSprint = input.down('ShiftLeft') || input.down('ShiftRight');
-      if (input.wasPressed('KeyC')) this.crouchToggle = !this.crouchToggle;
+      if (this.crouchHold) this.crouchToggle = false;
+      else if (input.wasPressed('KeyC')) this.crouchToggle = !this.crouchToggle;
       if ((wantSprint && fwd > 0) || input.wasPressed('Space')) this.crouchToggle = false;
-      a.crouching = this.crouchToggle || input.down('ControlLeft') || input.down('ControlRight');
+      a.crouching = this.crouchToggle || (this.crouchHold && input.down('KeyC')) || input.down('ControlLeft') || input.down('ControlRight');
       a.sprinting = wantSprint && fwd > 0 && !a.crouching && !a.drawing && a.stamina > (a.sprinting ? 0 : 8);
       if (input.wasPressed('Space') && a.jump()) g.audio.footstep(g.surfaceAt(a.pos), 1.2, true);
 
@@ -111,7 +112,8 @@ export class Player {
     // Minecraft-style: the view narrows as you draw (f² curve, up to 15%); right mouse zooms further
     const f = a.alive && a.drawing ? Math.min(1, a.drawFrac) : 0;
     this.drawZoom = lerp(this.drawZoom || 0, f * f, clamp(dt * 15, 0, 1));
-    const fov = lerp(CAM.fov * (1 - this.drawZoom * B.drawZoom), B.zoomFov, this.zoom);
+    const baseFov = (this.game.settings && this.game.settings.fov) || CAM.fov;
+    const fov = lerp(baseFov * (1 - this.drawZoom * B.drawZoom), B.zoomFov * (baseFov / CAM.fov), this.zoom);
     if (Math.abs(cam.fov - fov) > 0.01) { cam.fov = fov; cam.updateProjectionMatrix(); }
 
     let subject = a;

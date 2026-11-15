@@ -10,12 +10,12 @@ export class HUD {
   constructor(game) {
     this.game = game;
     this.el = {
-      hud: $('hud'), blue: $('blueCount'), red: $('redCount'), round: $('roundInfo'), feed: $('killfeed'),
+      hud: $('hud'), round: $('roundInfo'), feed: $('killfeed'),
       ch: $('crosshair'), chT: document.querySelector('#crosshair .t'), chB: document.querySelector('#crosshair .b'),
       chL: document.querySelector('#crosshair .l'), chR: document.querySelector('#crosshair .r'),
       hit: $('hitmarker'), meter: $('drawMeter'), fill: $('drawFill'), prompt: $('prompt'), centre: $('centreMsg'),
       vignette: $('damageVignette'), dmgArrow: $('dmgArrow'), hp: $('hpFill'), hpText: $('hpText'), sta: $('staFill'),
-      ammo: $('ammo'), stance: $('stance'), drawLabel: $('drawLabel'), hpChip: $('hpChip'), bandagePrompt: $('bandagePrompt'), bandageBar: $('bandageBar'), bandageFill: $('bandageFill'), recap: $('deathRecap'), arrows: $('arrowCount'), perf: $('perf'), scoreboard: $('scoreboard'),
+      ammo: $('ammo'), counts: $('teamCounts'), stance: $('stance'), drawLabel: $('drawLabel'), hpChip: $('hpChip'), bandagePrompt: $('bandagePrompt'), bandageBar: $('bandageBar'), bandageFill: $('bandageFill'), recap: $('deathRecap'), arrows: $('arrowCount'), perf: $('perf'), scoreboard: $('scoreboard'),
     };
     this.cache = {};
     this.hitTimer = 0;
@@ -68,9 +68,11 @@ export class HUD {
   update(dt) {
     const g = this.game;
     const p = g.player.archer;
-    // team counts
-    this._set('blue', this.el.blue, 'text', String(g.aliveCount('blue')));
-    this._set('red', this.el.red, 'text', String(g.aliveCount('red')));
+    // team counts (or survivors in a free-for-all)
+    const counts = g.ffa
+      ? `<span>Alive <b>${g.aliveCount()}</b> of ${g.activeCount()}</span>`
+      : `<span class="blue">Blue <b>${g.aliveCount('blue')}</b></span> – <span class="red">Red <b>${g.aliveCount('red')}</b></span>`;
+    this._set('counts', this.el.counts, 'html', counts);
     this._set('round', this.el.round, 'html', g.roundInfoText());
 
     // crosshair spread
@@ -159,7 +161,7 @@ export class HUD {
     this.el.scoreboard.classList.toggle('hidden', !showSb);
     if (showSb) {
       this.sbTimer = (this.sbTimer || 0) - dt;
-      if (this.sbTimer <= 0) { this.el.scoreboard.innerHTML = `<div class="sb">${this.teamTable('blue')}${this.teamTable('red')}</div>`; this.sbTimer = 0.25; }
+      if (this.sbTimer <= 0) { this.el.scoreboard.innerHTML = `<div class="sb">${g.ffa ? this.teamTable(null) : this.teamTable('blue') + this.teamTable('red')}</div>`; this.sbTimer = 0.25; }
     }
     if (g.input.wasPressed('F3')) { this.showPerf = !this.showPerf; this.el.perf.classList.toggle('hidden', !this.showPerf); }
   }
@@ -182,12 +184,13 @@ export class HUD {
   updatePerf(text) { if (this.showPerf) this.el.perf.textContent = text; }
 
   teamTable(team) {
-    const rows = this.game.teams[team].slice().sort((a, b) => b.stats.kills - a.stats.kills || b.stats.damage - a.stats.damage);
+    const rows = (team ? this.game.teams[team] : this.game.archers).filter((a) => a.active).sort((a, b) => b.stats.kills - a.stats.kills || b.stats.damage - a.stats.damage);
     const tr = rows.map((a) => {
       const acc = a.stats.shots ? Math.round((a.stats.hits / a.stats.shots) * 100) : 0;
       return `<tr class="${a.alive ? '' : 'dead'} ${a.isPlayer ? 'you' : ''}"><td>${a.isPlayer ? 'You' : escapeHtml(a.name) + (a.human ? ' ★' : '')}</td><td>${a.stats.kills}</td><td>${a.stats.deaths}</td><td>${acc}%</td><td>${Math.round(a.stats.damage)}</td></tr>`;
     }).join('');
-    return `<div><h3 class="${team}">${team === 'blue' ? 'Blue' : 'Red'} – ${this.game.roundWins[team]} round${this.game.roundWins[team] === 1 ? '' : 's'}</h3>
+    const head = !team ? 'Free-for-all' : `${team === 'blue' ? 'Blue' : 'Red'} – ${this.game.roundWins[team]} round${this.game.roundWins[team] === 1 ? '' : 's'}`;
+    return `<div><h3 class="${team || ''}">${head}</h3>
       <table><tr><th>Archer</th><th>K</th><th>D</th><th>Acc</th><th>Dmg</th></tr>${tr}</table></div>`;
   }
 }

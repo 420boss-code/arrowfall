@@ -1,41 +1,92 @@
-// Start, server browser, pause and end-of-round menus.
+// Start, online (servers and parties), friends, settings, pause, admin and end-of-round menus.
 import { NetClient } from '../net/NetClient.js';
 import { escapeHtml } from '../core/utils.js';
+import { LayoutPicker } from './LayoutPicker.js';
+import { buildSettingsPanel, resetSettings } from './Settings.js';
 
 const $ = (id) => document.getElementById(id);
 const MODE_NAMES = { tdm: 'Team Deathmatch', kotf: 'King of the Field' };
 const DIFF_NAMES = { easy: 'Easy', normal: 'Normal', hard: 'Hard' };
+const OVERLAYS = ['startMenu', 'serverMenu', 'pauseMenu', 'roundMenu', 'loading', 'adminMenu', 'settingsMenu', 'friendsMenu'];
+const FRIENDS_KEY = 'arrowfall-friends';
 
 function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch { return null; } return null; }
+const fmtNum = (n) => `#${n < 1000 ? String(n).padStart(3, '0') : n}`;
+
+async function copyText(text, btn) {
+  if (!btn.dataset.label) btn.dataset.label = btn.textContent;
+  try { await navigator.clipboard.writeText(text); btn.textContent = 'Copied'; } catch { btn.textContent = 'Select it to copy'; }
+  setTimeout(() => { btn.textContent = btn.dataset.label || 'Copy'; }, 1800);
+}
+
+// Free-for-all has no hill to hold: switch the mode list to Team Deathmatch and grey out the other.
+function lockModeForFfa(select, ffa) {
+  const k = [...select.options].find((o) => o.value === 'kotf');
+  k.disabled = ffa;
+  if (ffa && select.value === 'kotf') select.value = 'tdm';
+}
 
 export class Menus {
   constructor(game) {
     this.game = game;
-    $('optSens').addEventListener('input', (e) => { $('sensVal').textContent = Number(e.target.value).toFixed(2); });
+    this.currentRoom = null;
+    this.returnTo = 'startMenu';
+
+    // ---- start menu (offline)
+    this.offlineLayout = new LayoutPicker($('optLayout'), { bots: false, initial: store('arrowfall-layout') || '20v20', onChange: (v) => lockModeForFfa($('optMode'), v.type === 'ffa') });
     $('btnStart').addEventListener('click', () => {
-      const opts = this.localOptions();
-      Object.assign(opts, { mode: $('optMode').value, difficulty: $('optDiff').value, friendlyFire: $('optFF').checked });
+      store('arrowfall-layout', this.offlineLayout.preset);
+      const opts = { mode: $('optMode').value, difficulty: $('optDiff').value, friendlyFire: $('optFF').checked, layout: this.offlineLayout.value };
       this._syncPause(opts);
-      if (opts.fullscreen) this._fullscreen();
+      if (game.settings.fullscreen) this._fullscreen();
+      this.currentRoom = null;
       this.hideAll();
       game.startMatch(opts);
     });
     $('btnOnline').addEventListener('click', () => this.showServers());
+    $('btnSettings').addEventListener('click', () => this.showSettings('startMenu'));
+    $('btnFriends').addEventListener('click', () => this.showFriends('startMenu'));
+
+    // ---- online menu
     $('btnBack').addEventListener('click', () => this.showStart());
     $('btnRefresh').addEventListener('click', () => this.refreshServers());
+    this.onlineLayout = new LayoutPicker($('newLayout'), { bots: true, initial: '5v5', onChange: (v) => lockModeForFfa($('newMode'), v.type === 'ffa') });
+    const syncWho = () => {
+      const party = $('newWho').value === 'party';
+      $('btnCreate').textContent = party ? 'Create party' : 'Create public server';
+      $('newName').placeholder = party ? 'My party' : 'My server';
+    };
+    $('newWho').addEventListener('change', syncWho);
+    syncWho();
     $('btnCreate').addEventListener('click', () => this.createServer());
     $('btnJoinCode').addEventListener('click', () => {
       const code = $('joinCode').value.trim().toUpperCase();
       if (code) this.join(code);
     });
+    $('joinCode').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('btnJoinCode').click(); });
+    $('partyCopy').addEventListener('click', (e) => copyText($('partyCode').textContent, e.target));
+    $('partyEnter').addEventListener('click', () => { if (this.pendingParty) this.join(this.pendingParty); });
     $('playerName').value = store('arrowfall-name') || '';
+
+    // ---- settings and friends
+    $('setBack').addEventListener('click', () => this.closePanel('settingsMenu'));
+    $('setReset').addEventListener('click', () => resetSettings($('settingsBody'), game));
+    $('frBack').addEventListener('click', () => this.closePanel('friendsMenu'));
+    $('frAdd').addEventListener('click', () => this.addFriend());
+    $('frNum').addEventListener('keydown', (e) => { if (e.key === 'Enter') this.addFriend(); });
+    $('frCopy').addEventListener('click', (e) => { if (this.session && this.session.player) copyText(String(this.session.player), e.target); });
+
+    // ---- pause
     $('btnResume').addEventListener('click', () => game.resume());
-    $('btnQuit').addEventListener('click', () => game.quitToMenu());
+    $('btnQuit').addEventListener('click', () => { this.currentRoom = null; game.quitToMenu(); });
     $('pFF').addEventListener('change', (e) => { game.combat.friendlyFire = e.target.checked; });
-    $('pSens').addEventListener('input', (e) => { game.player.sensitivity = Number(e.target.value); });
-    $('pVol').addEventListener('input', (e) => { game.audio.setVolume(Number(e.target.value)); });
+    $('btnPauseSettings').addEventListener('click', () => this.showSettings('pauseMenu'));
+    $('btnPauseFriends').addEventListener('click', () => this.showFriends('pauseMenu'));
+    $('pPartyCopy').addEventListener('click', (e) => copyText($('pPartyCode').textContent, e.target));
     $('btnNext').addEventListener('click', () => game.continueAfterRound());
-    // session, logout and admin
+    $('btnMenu').addEventListener('click', () => { this.currentRoom = null; game.quitToMenu(); });
+
+    // ---- session, logout and admin
     this.session = window.__afSession || null;
     this._applySession();
     $('btnLogout').addEventListener('click', async () => {
@@ -51,17 +102,28 @@ export class Menus {
     $('admSignup').addEventListener('change', async (e) => {
       try { const r = await this._admin('/api/admin/signup', { open: e.target.checked }); this.admStatus(r.open ? 'Anyone can now make a code.' : 'Sign-up closed: only you can make codes.'); } catch (err) { this.admStatus(err.message, true); }
     });
+    $('admGuests').addEventListener('change', async (e) => {
+      try { const r = await this._admin('/api/admin/guests', { open: e.target.checked }); this.admStatus(r.open ? 'Guests can now play without a code.' : 'Guest play switched off: every guest has been logged out.'); this.refreshAdmin(); } catch (err) { this.admStatus(err.message, true); }
+    });
     $('admFAdd').addEventListener('click', () => this.addFaction());
-    $('btnMenu').addEventListener('click', () => game.quitToMenu());
   }
 
+  get isGuest() { return !!(this.session && this.session.role === 'guest'); }
+
   _applySession() {
-    const admin = this.session && this.session.role === 'admin';
+    const s = this.session;
+    const admin = s && s.role === 'admin';
     $('btnAdmin').classList.toggle('hidden', !admin);
     $('btnPauseAdmin').classList.toggle('hidden', !admin);
+    const hasNumber = !!(s && s.player);
+    $('btnFriends').classList.toggle('hidden', !hasNumber);
+    $('btnPauseFriends').classList.toggle('hidden', !hasNumber);
+    $('whoami').textContent = !s ? '' : admin ? 'Logged in as admin' : this.isGuest ? `Playing as a guest${s.guestId ? ` (guest ${s.guestId})` : ''} – online play only, no friends or parties of your own` : `Player ${fmtNum(s.player)}`;
+    $('createSection').classList.toggle('hidden', this.isGuest);
+    $('guestCreateNote').classList.toggle('hidden', !this.isGuest);
     const sel = $('playerFaction');
     const keep = sel.value || store('arrowfall-faction') || '';
-    sel.innerHTML = '<option value="">None</option>' + ((this.session && this.session.factions) || [])
+    sel.innerHTML = '<option value="">None</option>' + ((s && s.factions) || [])
       .map((f) => `<option value="${escapeHtml(f.id)}">[${escapeHtml(f.tag)}] ${escapeHtml(f.name)}</option>`).join('');
     sel.value = [...sel.options].some((o) => o.value === keep) ? keep : '';
   }
@@ -72,6 +134,101 @@ export class Menus {
       if (r.status === 401) { location.reload(); return; }
       if (r.ok) { this.session = await r.json(); this._applySession(); }
     } catch { /* offline */ }
+  }
+
+  // ---------------------------------------------------------------- panels opened over a menu
+  _openPanel(id, from) {
+    this.returnTo = from;
+    for (const o of ['startMenu', 'pauseMenu']) $(o).classList.add('hidden');
+    $(id).classList.remove('hidden');
+  }
+
+  closePanel(id) {
+    $(id).classList.add('hidden');
+    if (id === 'friendsMenu') clearInterval(this.friendTimer);
+    // the match may have ended while the panel was open
+    const back = this.returnTo === 'pauseMenu' && this.game.state !== 'playing' ? 'startMenu' : this.returnTo;
+    $(back).classList.remove('hidden');
+  }
+
+  showSettings(from) {
+    buildSettingsPanel($('settingsBody'), this.game);
+    this._openPanel('settingsMenu', from);
+  }
+
+  // ---------------------------------------------------------------- friends
+  friends() {
+    try { const f = JSON.parse(store(FRIENDS_KEY) || '[]'); return Array.isArray(f) ? f.filter((x) => x && Number.isInteger(x.id)) : []; } catch { return []; }
+  }
+
+  saveFriends(list) { store(FRIENDS_KEY, JSON.stringify(list)); }
+
+  showFriends(from) {
+    this._openPanel('friendsMenu', from);
+    $('frMe').textContent = this.session && this.session.player ? this.session.player : '–';
+    $('frStatus').textContent = '';
+    this.friendStatus = this.friendStatus || {};
+    this.renderFriends();
+    this.pollFriends();
+    clearInterval(this.friendTimer);
+    this.friendTimer = setInterval(() => this.pollFriends(), 8000);
+  }
+
+  addFriend() {
+    const raw = $('frNum').value.replace(/[^0-9]/g, '');
+    const id = Number(raw);
+    const st = $('frStatus');
+    if (!raw || !((id >= 1 && id <= 999) || (id >= 100000 && id <= 999999))) { st.textContent = 'Player numbers have 1–3 or 6 digits.'; return; }
+    if (this.session && id === this.session.player) { st.textContent = 'That is your own number.'; return; }
+    const list = this.friends();
+    if (list.some((f) => f.id === id)) { st.textContent = 'Already on your list.'; return; }
+    if (list.length >= 100) { st.textContent = 'Your list is full (100 friends).'; return; }
+    list.push({ id, nick: $('frNick').value.trim().slice(0, 20) });
+    this.saveFriends(list);
+    $('frNum').value = ''; $('frNick').value = '';
+    st.textContent = `Added ${fmtNum(id)}. Ask them to add your number, ${this.session.player}, too.`;
+    this.renderFriends();
+    this.pollFriends();
+  }
+
+  async pollFriends() {
+    try {
+      const r = await fetch('/api/friends', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: this.friends().map((f) => f.id) }) });
+      if (r.status === 401) { location.reload(); return; }
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Could not check on your friends.');
+      this.friendStatus = Object.fromEntries(data.friends.map((f) => [f.id, f]));
+      this.renderFriends();
+    } catch (e) {
+      $('frStatus').textContent = e.message && !/fetch/i.test(e.message) ? e.message : 'Friends need the online server.';
+    }
+  }
+
+  renderFriends() {
+    const list = this.friends();
+    const order = { playing: 0, online: 1, offline: 2, pending: 3 };
+    const st = (f) => (this.friendStatus[f.id] || { status: 'pending' });
+    list.sort((a, b) => (order[st(a).status] ?? 4) - (order[st(b).status] ?? 4));
+    $('frList').innerHTML = list.length ? list.map((f) => {
+      const s = st(f);
+      const text = s.status === 'playing' ? `in ${s.room.party ? 'a party' : escapeHtml(s.room.name)} · ${escapeHtml(s.room.layout)} · ${s.room.humans}/${s.room.max}`
+        : s.status === 'online' ? 'online, in the menus' : s.status === 'offline' ? 'offline' : 'has not added you back yet';
+      const canJoin = s.status === 'playing' && s.room.humans < s.room.max && (!this.currentRoom || this.currentRoom.id !== s.room.id);
+      return `<div class="it"><span class="presence ${s.status}"></span><span class="grow"><b>${escapeHtml(f.nick || fmtNum(f.id))}</b> <small>${f.nick ? `${fmtNum(f.id)} · ` : ''}${text}</small></span>` +
+        `${canJoin ? `<button data-fjoin="${escapeHtml(s.room.id)}">Join</button>` : ''}<button class="secondary" data-frm="${f.id}">Remove</button></div>`;
+    }).join('') : '<div class="empty">No friends added yet.</div>';
+    $('frList').querySelectorAll('[data-frm]').forEach((b) => b.addEventListener('click', () => {
+      this.saveFriends(this.friends().filter((f) => f.id !== Number(b.dataset.frm)));
+      this.renderFriends();
+      this.pollFriends();
+    }));
+    $('frList').querySelectorAll('[data-fjoin]').forEach((b) => b.addEventListener('click', () => {
+      clearInterval(this.friendTimer);
+      $('friendsMenu').classList.add('hidden');
+      if (this.game.state !== 'menu') this.game.quitToMenu();
+      this.showServers();
+      this.join(b.dataset.fjoin);
+    }));
   }
 
   // ---------------------------------------------------------------- admin panel
@@ -108,18 +265,22 @@ export class Menus {
       const item = (inner) => `<div class="it">${inner}</div>`;
       $('admFactions').innerHTML = st.factions.length ? st.factions.map((f) => item(
         `<span class="swatch" style="background:${escapeHtml(f.colour)}"></span><span class="grow"><b>[${escapeHtml(f.tag)}]</b> ${escapeHtml(f.name)}</span><button class="secondary" data-del="${escapeHtml(f.id)}">Delete</button>`)).join('') : '<div class="empty">No factions yet.</div>';
-      const num = (n) => `#${String(n).padStart(3, '0')}`;
       $('admPlayers').innerHTML = st.players.length ? st.players.map((p) => item(
-        `<span class="grow">${escapeHtml(p.name)}${p.faction ? ` <small>[${escapeHtml(p.faction)}]</small>` : ''} <small>· ${p.player ? num(p.player) : 'admin'} · ${escapeHtml(p.room)}</small></span><button class="secondary" data-kick="${escapeHtml(p.key)}">Kick</button>${p.player ? `<button data-ban="${escapeHtml(p.key)}">Ban</button>` : ''}`)).join('') : '<div class="empty">Nobody is in an online game right now.</div>';
+        `<span class="grow">${escapeHtml(p.name)}${p.faction ? ` <small>[${escapeHtml(p.faction)}]</small>` : ''} <small>· ${p.player ? fmtNum(p.player) : p.guest ? 'guest' : 'admin'} · ${escapeHtml(p.room)}</small></span><button class="secondary" data-kick="${escapeHtml(p.key)}">Kick</button>${p.player || p.guest ? `<button data-ban="${escapeHtml(p.key)}">Ban</button>` : ''}`)).join('') : '<div class="empty">Nobody is in an online game right now.</div>';
       if (!$('admNum').value && st.nextNumber) $('admNum').value = st.nextNumber;
       $('admSignup').checked = !!st.signupOpen;
+      $('admGuests').checked = !!st.guestsOpen;
       $('admCodes').innerHTML = st.codes.length ? st.codes.map((c) => item(
-        `<span class="grow">${num(c.player)} ${escapeHtml(c.name || '')} <code>${c.code.length === 8 ? `${c.code.slice(0, 3)} ${c.code.slice(3)}` : `${c.code.slice(0, 6)} ${c.code.slice(6)}`}</code>${c.revoked ? ` <small class="revoked">${c.permanent ? 'blocked (REVOKED_PLAYERS)' : 'revoked'}</small>` : ''}</span>` +
+        `<span class="grow">${fmtNum(c.player)} ${escapeHtml(c.name || '')} <code>${c.code.length === 8 ? `${c.code.slice(0, 3)} ${c.code.slice(3)}` : `${c.code.slice(0, 6)} ${c.code.slice(6)}`}</code>${c.revoked ? ` <small class="revoked">${c.permanent ? 'blocked (REVOKED_PLAYERS)' : 'revoked'}</small>` : ''}</span>` +
         (c.permanent ? '' : c.revoked ? `<button class="secondary" data-restore="${c.player}">Restore</button>` : `<button data-revoke="${c.player}">Revoke</button>`))).join('') : '<div class="empty">No player codes created yet.</div>';
       $('admBans').innerHTML = st.bans.length ? st.bans.map((b) => item(
-        `<span class="grow">${escapeHtml(b.name)} <small>· ${escapeHtml(b.ip)} · ${escapeHtml(b.at.slice(0, 10))}</small></span><button class="secondary" data-unban="${escapeHtml(b.id)}">Unban</button>`)).join('') : '<div class="empty">No bans.</div>';
+        `<span class="grow">${escapeHtml(b.name)} <small>· ${escapeHtml(b.ip)}${b.guestOnly ? ' · guests only' : ''} · ${escapeHtml(b.at.slice(0, 10))}</small></span><button class="secondary" data-unban="${escapeHtml(b.id)}">Unban</button>`)).join('') : '<div class="empty">No bans.</div>';
       const act = (attr, path, label) => $('adminMenu').querySelectorAll(`[${attr}]`).forEach((btn) => btn.addEventListener('click', async () => {
-        try { await this._admin(path, attr === 'data-del' || attr === 'data-unban' ? { id: btn.getAttribute(attr) } : { key: btn.getAttribute(attr) }); this.admStatus(label); this.refreshAdmin(); } catch (e) { this.admStatus(e.message, true); }
+        try {
+          const r = await this._admin(path, attr === 'data-del' || attr === 'data-unban' ? { id: btn.getAttribute(attr) } : { key: btn.getAttribute(attr) });
+          this.admStatus(typeof label === 'function' ? label(r) : label);
+          this.refreshAdmin();
+        } catch (e) { this.admStatus(e.message, true); }
       }));
       const actNum = (attr, path, label) => $('adminMenu').querySelectorAll(`[${attr}]`).forEach((btn) => btn.addEventListener('click', async () => {
         try { await this._admin(path, { player: Number(btn.getAttribute(attr)) }); this.admStatus(label); this.refreshAdmin(); } catch (e) { this.admStatus(e.message, true); }
@@ -128,7 +289,7 @@ export class Menus {
       actNum('data-restore', '/api/admin/restore', 'Code restored.');
       act('data-del', '/api/admin/faction/delete', 'Faction deleted.');
       act('data-kick', '/api/admin/kick', 'Player kicked.');
-      act('data-ban', '/api/admin/ban', 'Player banned: their code is revoked (Restore under Player codes to undo).');
+      act('data-ban', '/api/admin/ban', (r) => (r.ipBan ? 'Guest logins from that address are now blocked; people with codes there are unaffected (lift it under Bans).' : 'Player banned: their code is revoked (Restore under Player codes to undo).'));
       act('data-unban', '/api/admin/unban', 'Ban lifted.');
     } catch (e) { this.admStatus(e.message, true); }
   }
@@ -138,7 +299,7 @@ export class Menus {
     try {
       const r = await this._admin('/api/admin/password', { which, password: pw });
       $(inputId).value = '';
-      this.admStatus(`${which === 'entry' ? 'Entry' : 'Admin'} password changed. ${r.note}`);
+      this.admStatus(`Admin password changed. ${r.note}`);
     } catch (e) { this.admStatus(e.message, true); }
   }
 
@@ -147,7 +308,7 @@ export class Menus {
       const r = await this._admin('/api/admin/code', { player: Number($('admNum').value), name: $('admNumName').value });
       const box = $('admNewCode');
       box.hidden = false;
-      box.innerHTML = `Player #${String(r.player).padStart(3, '0')}${r.name ? ` (${escapeHtml(r.name)})` : ''}: <b>${r.code.slice(0, 3)} ${r.code.slice(3)}</b>${r.revoked ? ' <span class="revoked">– currently revoked</span>' : ''}<br><small>Give this code to that player. The same number always gives the same code.</small>`;
+      box.innerHTML = `Player ${fmtNum(r.player)}${r.name ? ` (${escapeHtml(r.name)})` : ''}: <b>${r.code.slice(0, 3)} ${r.code.slice(3)}</b>${r.revoked ? ' <span class="revoked">– currently revoked</span>' : ''}<br><small>Give this code to that player. The same number always gives the same code.</small>`;
       $('admNum').value = ''; $('admNumName').value = '';
       this.refreshAdmin();
     } catch (e) { this.admStatus(e.message, true); }
@@ -162,19 +323,8 @@ export class Menus {
     } catch (e) { this.admStatus(e.message, true); }
   }
 
-  localOptions() {
-    return {
-      sensitivity: Number($('optSens').value),
-      volume: Number($('optVol').value),
-      shadows: $('optShadows').checked,
-      fullscreen: $('optFull').checked,
-    };
-  }
-
   _syncPause(opts) {
     $('pFF').checked = !!opts.friendlyFire;
-    $('pSens').value = opts.sensitivity;
-    $('pVol').value = opts.volume;
   }
 
   async _fullscreen() {
@@ -186,7 +336,8 @@ export class Menus {
   }
 
   hideAll() {
-    for (const id of ['startMenu', 'serverMenu', 'pauseMenu', 'roundMenu', 'loading', 'adminMenu']) $(id).classList.add('hidden');
+    for (const id of OVERLAYS) $(id).classList.add('hidden');
+    clearInterval(this.friendTimer);
   }
 
   showStart(message) {
@@ -195,10 +346,11 @@ export class Menus {
     $('startNote').textContent = message || '';
   }
 
-  // ---------------------------------------------------------------- server browser
+  // ---------------------------------------------------------------- online: servers and parties
   showServers() {
     this.hideAll();
     $('serverMenu').classList.remove('hidden');
+    $('partyBox').hidden = true;
     this.status('');
     this.refreshSession();
     this.refreshServers();
@@ -218,38 +370,49 @@ export class Menus {
 
   async refreshServers() {
     const body = $('serverList');
-    body.innerHTML = '<tr><td colspan="5">Looking for servers…</td></tr>';
+    body.innerHTML = '<tr><td colspan="6">Looking for servers…</td></tr>';
     try {
       const res = await fetch('/api/servers');
       if (!res.ok) throw new Error();
       const list = await res.json();
-      if (!list.length) { body.innerHTML = '<tr><td colspan="5">No public servers right now – create one below.</td></tr>'; return; }
+      if (!list.length) { body.innerHTML = '<tr><td colspan="6">No public servers right now – start one below.</td></tr>'; return; }
       body.innerHTML = list.map((s) => `<tr>
         <td><b>${escapeHtml(s.name)}</b></td>
-        <td>${MODE_NAMES[s.mode] || escapeHtml(s.mode)}${s.ff ? ' · FF' : ''}</td>
+        <td>${escapeHtml(s.layout || '20 v 20')}</td>
+        <td>${s.ffa ? 'Free-for-all' : MODE_NAMES[s.mode] || escapeHtml(s.mode)}${s.ff && !s.ffa ? ' · FF' : ''}</td>
         <td>${DIFF_NAMES[s.difficulty] || escapeHtml(s.difficulty)}</td>
-        <td>${s.humans}/${s.max} players</td>
+        <td>${s.humans}/${s.max}</td>
         <td><button class="join" data-id="${escapeHtml(s.id)}" ${s.humans >= s.max ? 'disabled' : ''}>Join</button></td></tr>`).join('');
       body.querySelectorAll('button.join').forEach((b) => b.addEventListener('click', () => this.join(b.dataset.id)));
     } catch {
-      body.innerHTML = '<tr><td colspan="5">No game server found. Online play needs <code>npm run dev</code> or <code>npm start</code> (see README).</td></tr>';
+      body.innerHTML = '<tr><td colspan="6">No game server found. Online play needs <code>npm run dev</code> or <code>npm start</code> (see README).</td></tr>';
     }
   }
 
   async createServer() {
+    const party = $('newWho').value === 'party';
+    const layout = this.onlineLayout.value;
     const payload = {
-      name: $('newName').value.trim() || `${this.playerName()}'s server`,
-      mode: $('newMode').value,
+      name: $('newName').value.trim() || (party ? `${this.playerName()}'s party` : `${this.playerName()}'s server`),
+      mode: layout.type === 'ffa' ? 'tdm' : $('newMode').value,
       difficulty: $('newDiff').value,
       friendlyFire: $('newFF').checked,
-      isPublic: $('newPublic').checked,
+      isPublic: !party,
+      party,
+      layout,
     };
-    this.status('Creating server…');
+    this.status(party ? 'Setting up your party…' : 'Creating server…');
     try {
-      const res = await fetch('/api/servers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const res = await fetch('/api/servers', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not create a server.');
-      await this.join(data.id);
+      if (party) {
+        this.pendingParty = data.id;
+        $('partyCode').textContent = data.id;
+        $('partyBox').hidden = false;
+        this.status('');
+        $('partyBox').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      } else await this.join(data.id);
     } catch (e) {
       this.status(e.message, true);
     }
@@ -263,10 +426,10 @@ export class Menus {
       const faction = $('playerFaction').value;
       store('arrowfall-faction', faction);
       const welcome = await net.connect(roomId, name, faction || null);
-      const opts = this.localOptions();
-      this._syncPause(opts);
-      if (opts.fullscreen) this._fullscreen();
-      this.game.startOnline(net, welcome, opts);
+      this.currentRoom = welcome.room;
+      this._syncPause({ friendlyFire: welcome.match && welcome.match.ff });
+      if (this.game.settings.fullscreen) this._fullscreen();
+      this.game.startOnline(net, welcome, {});
     } catch (e) {
       net.close();
       this.status(e.message, true);
@@ -276,8 +439,11 @@ export class Menus {
   // ---------------------------------------------------------------- in-game
   showPause(on, online = false) {
     $('pauseMenu').classList.toggle('hidden', !on);
-    if (!on) return;
+    if (!on) { for (const id of ['settingsMenu', 'friendsMenu', 'adminMenu']) $(id).classList.add('hidden'); clearInterval(this.friendTimer); return; }
     $('pFFRow').classList.toggle('hidden', online);
+    const party = online && this.currentRoom && !this.currentRoom.isPublic;
+    $('pParty').classList.toggle('hidden', !party);
+    if (party) $('pPartyCode').textContent = this.currentRoom.id;
     $('pauseTitle').textContent = online ? 'Menu – the battle goes on' : 'Paused';
     $('btnQuit').textContent = online ? 'Leave server' : 'Quit to menu';
   }

@@ -4,13 +4,15 @@ import { encodeSnapshot, vec3, SNAP_RATE } from '../src/net/protocol.js';
 import { CONFIG } from '../src/config.js';
 
 export class Room {
-  constructor({ id, name, mode, difficulty, friendlyFire, isPublic, persistent = false, ownerIp = null }) {
+  constructor({ id, name, mode, difficulty, friendlyFire, isPublic, persistent = false, ownerIp = null, layout = null, party = false }) {
     this.id = id;
     this.name = name;
     this.isPublic = isPublic;
     this.persistent = persistent;
     this.ownerIp = ownerIp;
-    this.opts = { mode, difficulty, friendlyFire: !!friendlyFire };
+    this.party = party;
+    this.opts = { mode, difficulty, friendlyFire: !!friendlyFire, layout: Game.normaliseLayout(layout) };
+    if (this.opts.layout.type === 'ffa') this.opts.mode = 'tdm';
     this.game = new Game(null, { headless: true });
     this.game.startMatch(this.opts);
     this.game.events.length = 0;
@@ -23,9 +25,12 @@ export class Room {
   get humans() { return this.clients.size; }
 
   info() {
+    const L = this.opts.layout;
     return {
+      layout: Game.layoutLabel(L), ffa: L.type === 'ffa', party: this.party,
+      max: L.type === 'ffa' ? L.count : L.red + L.blue,
       id: this.id, name: this.name, mode: this.opts.mode, difficulty: this.opts.difficulty, ff: this.opts.friendlyFire,
-      humans: this.clients.size, max: this.game.archers.length, round: this.game.round, wins: this.game.roundWins,
+      humans: this.clients.size, round: this.game.round, wins: this.game.roundWins,
     };
   }
 
@@ -36,14 +41,15 @@ export class Room {
     for (const ws of this.clients.keys()) this._send(ws, s);
   }
 
-  _roster() { return this.game.archers.map((a) => [a.idx, a.name, a.human ? 1 : 0]); }
+  _roster() { return this.game.archers.map((a) => [a.idx, a.name, a.human ? 1 : 0, a.active ? 1 : 0]); }
   _stats() { return this.game.archers.map((a) => { const s = a.stats; return [s.kills, s.deaths, s.shots, s.hits, Math.round(s.damage), s.headshots]; }); }
 
   join(ws, name, faction = null) {
     const g = this.game;
-    if (this.clients.size >= g.archers.length) return 'This server is full.';
     // the first arrival in a sleeping room gets a fresh match
     if (this.clients.size === 0) { g.startMatch(this.opts); g.events.length = 0; }
+    const open = g.archers.filter((a) => a.inLayout && !a.remote);
+    if (!open.length) return 'This game is full.';
     const humansOn = (t) => [...this.clients.values()].filter((c) => g.archers[c.idx].team === t).length;
     let prefer = humansOn('blue') <= humansOn('red') ? 'blue' : 'red';
     // factions fight together: join the side most of your faction is already on
@@ -53,11 +59,12 @@ export class Room {
       if (b !== r) prefer = b > r ? 'blue' : 'red';
     }
     const other = prefer === 'blue' ? 'red' : 'blue';
-    let free = g.teams[prefer].filter((a) => !a.remote);
-    if (!free.length) free = g.teams[other].filter((a) => !a.remote);
+    let free = g.ffa ? open : open.filter((a) => a.team === prefer);
+    if (!free.length) free = open.filter((a) => a.team === other);
     // take over a living bot where possible, so you're straight into the action
-    const slot = free.find((a) => a.alive) || free[0];
+    const slot = free.find((a) => a.active && a.alive) || free[0];
     slot.remote = true;
+    if (!slot.active) g.refreshActive(); // bots off: this slot comes to life for you
     slot.human = true;
     slot.name = faction ? `[${faction.tag}] ${name}` : name;
     slot.epoch++;
@@ -69,7 +76,7 @@ export class Room {
       t: 'welcome',
       you: slot.idx,
       room: { id: this.id, name: this.name, isPublic: this.isPublic },
-      match: { m: g.mode, ff: g.combat.friendlyFire ? 1 : 0, d: this.opts.difficulty },
+      match: { m: g.mode, ff: g.combat.friendlyFire ? 1 : 0, d: this.opts.difficulty, lay: g.layout },
       round: g.round,
       wins: g.roundWins,
       roundOver: g.roundOver,
@@ -92,7 +99,8 @@ export class Room {
     a.human = false;
     a.name = a.botName;
     a.drawing = false;
-    if (a.ai) a.ai.reset(); // a bot picks up where the human left off
+    if (a.ai) a.ai.reset(); // a bot picks up where the human left off (or, with bots off, the slot empties)
+    if (!this.game.layout.bots) this.game.refreshActive();
     if (this.clients.size === 0) this.emptySince = Date.now();
     this._broadcast({ t: 'roster', list: this._roster() });
   }

@@ -69,6 +69,8 @@ export const CONFIG = {
     limpBelow: 30,           // below this HP archers limp…
     limpSpeed: 0.85,         // …at this fraction of normal speed
     lowHpWarning: 30,        // heartbeat and red pulse below this
+    resupplyRadius: 8,       // metres from your own spawn point where the quiver refills…
+    resupplyEvery: 1.5,      // …by one arrow this often (up to the starting quiver)
   },
 
   // Minecraft-style bow (1 metre = 1 block, 20 game ticks per second).

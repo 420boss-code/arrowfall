@@ -27,6 +27,16 @@ class Squad {
     const s = this.side;
     const wps = [];
     this.wpIndex = 0;
+    if (mode === 'ffa') {
+      // lone hunters: head inwards from your own spawn, then roam towards whoever is left
+      const L = this.members[0];
+      const hx = L.homeX ?? L.pos.x, hz = L.homeZ ?? L.pos.z;
+      wps.push({ x: hx * 0.55, z: hz * 0.55 });
+      wps.push({ x: (Math.random() - 0.5) * 60, z: (Math.random() - 0.5) * 60 });
+      this.waypoints = wps;
+      this.holdAtEnd = false;
+      return;
+    }
     if (mode === 'kotf') {
       const a = Math.random() * Math.PI * 2;
       wps.push({ x: s * (FR + 12), z: (Math.random() - 0.5) * 30, regroup: true });
@@ -80,7 +90,7 @@ class Squad {
       if (this.wpIndex < this.waypoints.length - 1) this.wpIndex++;
       else if (!this.holdAtEnd) {
         // route finished: hunt toward a known or random enemy position
-        const e = game.randomAliveEnemy(this.team);
+        const e = game.randomAliveEnemy(game.ffa ? L : this.team);
         if (e) this.waypoints.push({ x: e.pos.x, z: e.pos.z }), this.wpIndex++;
       }
     }
@@ -103,8 +113,15 @@ export class AIManager {
     this.bots = [];
     this.squads = [];
     for (const team of ['red', 'blue']) for (const a of teams[team]) a.ai = null;
+    const ffa = this.game.ffa;
+    this.mode = ffa ? 'ffa' : mode;
     for (const team of ['red', 'blue']) {
-      const members = teams[team].filter((a) => !a.isPlayer);
+      const members = teams[team].filter((a) => !a.isPlayer && a.inLayout !== false);
+      if (ffa) {
+        // free-for-all: everyone hunts alone
+        members.forEach((m, k) => { const sq = new Squad(team, [m], k, diff.aggression, 'ffa'); this.squads.push(sq); this.bots.push(new AIController(this.game, m, sq, diff)); });
+        continue;
+      }
       let idx = 0;
       for (let i = 0; i < members.length; i += AIC.squadSize) {
         const group = members.slice(i, i + AIC.squadSize);
@@ -117,7 +134,7 @@ export class AIManager {
 
   newRound(mode) {
     for (const sq of this.squads) {
-      sq.plan(this.diff.aggression, mode);
+      sq.plan(this.diff.aggression, this.mode === 'ffa' ? 'ffa' : mode);
       sq.lastKnown = null; sq.regrouping = false; sq.alertUntil = 0;
     }
     for (const b of this.bots) b.reset();

@@ -24,6 +24,7 @@ import { Audio } from '../audio/Audio.js';
 import { HUD } from '../ui/HUD.js';
 import { Minimap } from '../ui/Minimap.js';
 import { Menus } from '../ui/Menus.js';
+import { loadSettings, applySettings } from '../ui/Settings.js';
 import { HEADER, STRIDE, FL, ZONE, CLIENT_RATE, vec3 } from '../net/protocol.js';
 
 const R = CONFIG.rules;
@@ -44,6 +45,7 @@ const emptyStats = () => ({ kills: 0, deaths: 0, shots: 0, hits: 0, damage: 0, h
 export class Game {
   constructor(container, { headless = false, treeModels = null } = {}) {
     this.headless = headless;
+    this.settings = headless ? {} : loadSettings();
     this.role = headless ? 'server' : 'offline';
     this.net = null;
     this.events = [];
@@ -115,10 +117,12 @@ export class Game {
     this.round = 1;
     this.roundTime = 0;
     this.zoneScore = { red: 0, blue: 0 };
+    this.applyLayout(null);
     this.placeAtSpawns();
     this.perf = { frames: 0, acc: 0, fps: 0, cpu: 0, cpuAcc: 0, worst: 0, worstAcc: 0 };
     if (!headless) {
       this.last = performance.now();
+      applySettings(this, this.settings);
       this.menus.showStart();
       this._loop = this._loop.bind(this);
       requestAnimationFrame(this._loop);
@@ -156,15 +160,90 @@ export class Game {
     this.projectiles.listener = a;
   }
 
-  _applyLocalOptions(opts) {
-    this.player.sensitivity = opts.sensitivity;
+  // Settings live in localStorage (see ui/Settings.js); a match start re-applies them and resets the view.
+  _applyLocalOptions() {
     this.audio.init();
-    this.audio.setVolume(opts.volume);
-    if (opts.shadows !== this.renderer.shadowMap.enabled) {
-      this.renderer.shadowMap.enabled = opts.shadows;
-      this.terrain.sun.castShadow = opts.shadows;
-      this.scene.traverse((o) => { if (o.material) [].concat(o.material).forEach((m) => { m.needsUpdate = true; }); });
+    applySettings(this, this.settings);
+    this.player.firstPerson = this.settings.firstPerson;
+  }
+
+  // ------------------------------------------------------------------ layouts
+  // { type: 'teams', red, blue, bots } or { type: 'ffa', count, bots }
+  static normaliseLayout(l) {
+    const n = (v, lo, hi, d) => { if (v === null || v === undefined || v === '') return d; v = Math.round(Number(v)); return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d; };
+    const T = CONFIG.teams.size;
+    if (l && l.type === 'ffa') return { type: 'ffa', count: n(l.count, 2, T * 2, 10), bots: l.bots !== false };
+    return { type: 'teams', red: n(l && l.red, 1, T, T), blue: n(l && l.blue, 1, T, T), bots: !l || l.bots !== false };
+  }
+
+  static layoutLabel(l) {
+    l = Game.normaliseLayout(l);
+    const s = l.type === 'ffa' ? `Free-for-all (${l.count})` : `${l.blue} v ${l.red}`;
+    return l.bots ? s : `${s}, no bots`;
+  }
+
+  // Free-for-all fills slots alternately from each team so colours and spawns spread evenly.
+  _slotOrder() {
+    const out = [];
+    for (let i = 0; i < CONFIG.teams.size; i++) out.push(this.teams.blue[i], this.teams.red[i]);
+    return out;
+  }
+
+  applyLayout(layout) {
+    const L = (this.layout = Game.normaliseLayout(layout));
+    this.ffa = L.type === 'ffa';
+    for (const a of this.archers) { a.inLayout = false; a.ffaIdx = -1; }
+    if (this.ffa) this._slotOrder().slice(0, L.count).forEach((a, k) => { a.inLayout = true; a.ffaIdx = k; });
+    else for (const t of ['blue', 'red']) this.teams[t].forEach((a, i) => { a.inLayout = i < L[t]; });
+    this.refreshActive();
+    // colours: team colours, or a distinct colour each in a free-for-all
+    const col = new THREE.Color(), dark = new THREE.Color();
+    for (const a of this.archers) {
+      if (this.ffa && a.inLayout) {
+        const h = (a.ffaIdx * 0.618034) % 1;
+        col.setHSL(h, 0.62, 0.47); dark.setHSL(h, 0.6, 0.24);
+      } else {
+        col.set(a.team === 'blue' ? CONFIG.colours.blue : CONFIG.colours.red);
+        dark.set(a.team === 'blue' ? CONFIG.colours.blueDark : CONFIG.colours.redDark);
+      }
+      a.colour = col.getHex();
+      this.archerRenderer.recolour(a.idx, col, dark);
     }
+  }
+
+  // An in-layout slot is active when bots are on, or when a human holds it.
+  refreshActive() {
+    for (const a of this.archers) {
+      const was = a.active;
+      a.active = !!a.inLayout && (this.layout.bots || a.remote || a.isPlayer);
+      if (!a.active) { a.alive = false; a.hp = 0; a.drawing = false; a.bandaging = false; a.pos.set(0, -500, 0); a.deathTime = 99; }
+      else if (was === false && this.role !== 'client') this.respawn(a);
+    }
+  }
+
+  // Small games get shorter rounds: 4 min up to 10 archers, 6 up to 20, then the configured limit.
+  roundLimit() {
+    const n = this.activeCount();
+    return n <= 10 ? Math.min(240, R.roundTimeLimit) : n <= 20 ? Math.min(360, R.roundTimeLimit) : R.roundTimeLimit;
+  }
+
+  isEnemy(a, b) { return a !== b && (this.ffa || a.team !== b.team); }
+  enemiesOf(a) { return this.archers.filter((x) => x.active && this.isEnemy(a, x)); }
+  alliesOf(a) { return this.ffa ? [] : this.teams[a.team].filter((x) => x.active && x !== a); }
+  activeCount(team) { return (team ? this.teams[team] : this.archers).filter((a) => a.active).length; }
+
+  // Enough players to play? (with bots off a round waits for both sides, or two free-for-all players)
+  layoutReady() {
+    return this.ffa ? this.activeCount() >= 2 : this.activeCount('red') > 0 && this.activeCount('blue') > 0;
+  }
+
+  _ffaSpawn(a) {
+    const N = this.layout.count, k = a.ffaIdx;
+    const ang = (k / N) * Math.PI * 2 + 0.35, r = 82 + (k % 3) * 14;
+    _v.set(Math.cos(ang) * r, 0, Math.sin(ang) * r);
+    this.forest.collideCircle(_v, 1.2, this.terrain.height(_v.x, _v.z));
+    _v.y = this.terrain.height(_v.x, _v.z);
+    return Math.atan2(_v.x, _v.z); // face the middle
   }
 
   // ------------------------------------------------------------------ match flow
@@ -180,11 +259,13 @@ export class Game {
       this._applyLocalOptions(opts);
     }
     for (const a of this.archers) a.stats = emptyStats();
+    this.applyLayout(opts.layout);
+    if (this.ffa) { this.mode = 'tdm'; }
     this.ai.setup(this.teams, opts.difficulty, this.mode);
     this.roundWins = { red: 0, blue: 0 };
     this.round = 1;
     this.zone.visible = this.mode === 'kotf';
-    this.emit({ t: 'match', m: this.mode, ff: this.combat.friendlyFire ? 1 : 0, d: opts.difficulty });
+    this.emit({ t: 'match', m: this.mode, ff: this.combat.friendlyFire ? 1 : 0, d: opts.difficulty, lay: this.layout });
     this.startRound();
   }
 
@@ -195,11 +276,25 @@ export class Game {
   }
 
   respawn(a, i = this.teams[a.team].indexOf(a)) {
-    const sp = this.forest.spawnPoints[a.team][i];
-    _v.set(sp.x, this.terrain.height(sp.x, sp.z), sp.z);
     this.projectiles.clearBody(a);
+    if (a.active === false) {
+      // unused slot: kept out of the world
+      a.reset(_v.set(0, -500, 0));
+      a.alive = false; a.hp = 0; a.deathTime = 99;
+      a.epoch++;
+      if (!this._bulk) this.emit({ t: 'respawn', i: a.idx, e: a.epoch });
+      return;
+    }
+    let yaw;
+    if (this.ffa && a.ffaIdx >= 0) yaw = this._ffaSpawn(a);
+    else {
+      const sp = this.forest.spawnPoints[a.team][i];
+      _v.set(sp.x, this.terrain.height(sp.x, sp.z), sp.z);
+      yaw = a.team === 'red' ? -Math.PI / 2 : Math.PI / 2;
+    }
+    a.homeX = _v.x; a.homeZ = _v.z;
     a.reset(_v);
-    a.yaw = a.team === 'red' ? -Math.PI / 2 : Math.PI / 2;
+    a.yaw = yaw;
     a.pitch = 0;
     a.epoch++;
     a.net = null;
@@ -283,11 +378,11 @@ export class Game {
   onKill(victim, killer, headshot) {
     this.hud.killFeed(killer, victim, headshot);
     // death poof (no smoke over your own first-person view)
-    if (CONFIG.graphics.deathParticles) this.particles.death(victim, headshot, victim.isPlayer && this.player && this.player.firstPerson);
+    if (CONFIG.graphics.deathParticles && this.settings.deathParticles !== false) this.particles.death(victim, headshot, victim.isPlayer && this.player && this.player.firstPerson);
     if (victim.isPlayer && this.player) {
       this.audio.stopDraw();
       this.hud.deathRecap(victim, killer);
-      this.player.spectating = this.teams[victim.team].find((a) => a.alive && a !== victim) || null;
+      this.player.spectating = this.spectateTarget(victim);
       this.player.specYaw = victim.yaw;
     }
     if (this.mode === 'kotf') victim.respawnAt = this.time + R.kotfRespawnDelay;
@@ -296,7 +391,7 @@ export class Game {
   // Damage numbers, enemy health bars and camera shake for whoever is watching.
   onHitFeedback(victim, shooter, dmg, crit) {
     if (!this.player) return;
-    if (shooter && shooter.isPlayer) { this.overlay.damageNumber(victim, dmg, crit); victim.lastHitByMe = this.time; }
+    if (shooter && shooter.isPlayer) { if (this.settings.damageNumbers !== false) this.overlay.damageNumber(victim, dmg, crit); victim.lastHitByMe = this.time; }
     if (victim.isPlayer) this.player.shake = Math.min(1, this.player.shake + 0.35 + dmg / 120);
   }
 
@@ -307,18 +402,26 @@ export class Game {
     else this.health.startBandage(me);
   }
 
+  spectateTarget(me) {
+    const pool = this.ffa ? this.archers : this.teams[me.team];
+    return pool.find((a) => a.alive && a.active && a !== me) || null;
+  }
+
   aliveCount(team) {
     let n = 0;
-    for (const a of this.teams[team]) if (a.alive) n++;
+    for (const a of team ? this.teams[team] : this.archers) if (a.alive && a.active) n++;
     return n;
   }
 
-  reportSighting(team, enemy) { this.spottedBy[team][enemy.idx] = this.time; }
+  reportSighting(team, enemy) { if (!this.ffa) this.spottedBy[team][enemy.idx] = this.time; }
 
   isSpotted(a, byTeam) { return this.time - (this.spottedBy[byTeam][a.idx] ?? -99) < 2.5; }
 
-  randomAliveEnemy(team) {
-    const list = this.teams[team === 'red' ? 'blue' : 'red'].filter((a) => a.alive);
+  // Accepts a team name, or an archer (needed in a free-for-all).
+  randomAliveEnemy(teamOrArcher) {
+    const list = typeof teamOrArcher === 'string'
+      ? this.teams[teamOrArcher === 'red' ? 'blue' : 'red'].filter((a) => a.alive && a.active)
+      : this.enemiesOf(teamOrArcher).filter((a) => a.alive);
     return list.length ? list[Math.floor(Math.random() * list.length)] : null;
   }
 
@@ -327,7 +430,7 @@ export class Game {
   nearestLootableCorpse(archer, radius) {
     let best = null, bd = radius * radius;
     for (const a of this.archers) {
-      if (a.alive || a.arrows <= 0 || a === archer) continue;
+      if (a.alive || !a.active || a.arrows <= 0 || a === archer) continue;
       const d = a.pos.distanceToSquared(archer.pos);
       if (d < bd) { bd = d; best = a; }
     }
@@ -392,18 +495,35 @@ export class Game {
 
   roundInfoText() {
     const online = this.role === 'client' ? ' · online' : '';
+    if (this.waiting) return `Waiting for players – ${Game.layoutLabel(this.layout)}${online}`;
+    if (this.ffa) {
+      const left = Math.max(0, this.roundLimit() - this.roundTime);
+      return `Free-for-all · ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}${online}`;
+    }
     if (this.mode === 'kotf') {
       return `Zone <span class="blue">${Math.floor(this.zoneScore.blue)}</span> – <span class="red">${Math.floor(this.zoneScore.red)}</span> · first to ${R.kotfScoreToWin}` +
         (this.zoneOwner ? ` · held by ${this.zoneOwner === 'blue' ? 'Blue' : 'Red'}` : this.zoneContested ? ' · contested' : '') + online;
     }
-    const left = Math.max(0, R.roundTimeLimit - this.roundTime);
+    const left = Math.max(0, this.roundLimit() - this.roundTime);
     const m = Math.floor(left / 60), s = Math.floor(left % 60);
     return `Round ${this.round} · Blue ${this.roundWins.blue} – Red ${this.roundWins.red} · ${m}:${String(s).padStart(2, '0')}${online}`;
   }
 
   // ------------------------------------------------------------------ rules (offline and server)
   _rules(dt) {
+    this.waiting = !this.layoutReady();
+    if (this.waiting) return; // not enough players yet: the clock doesn't run
     this.roundTime += dt;
+    if (this.ffa) {
+      const alive = this.archers.filter((a) => a.active && a.alive);
+      if (alive.length <= 1) this._endRound(alive.length ? alive[0].idx : null);
+      else if (this.roundTime >= this.roundLimit()) {
+        // on time: most kills this round wins
+        const best = alive.slice().sort((x, y) => (y.stats.kills - (y.roundStart?.kills || 0)) - (x.stats.kills - (x.roundStart?.kills || 0)))[0];
+        this._endRound(best.idx, true);
+      }
+      return;
+    }
     if (this.mode === 'kotf') {
       const r2 = R.kotfZoneRadius * R.kotfZoneRadius;
       const inZone = { red: 0, blue: 0 };
@@ -420,22 +540,28 @@ export class Game {
     }
     const red = this.aliveCount('red'), blue = this.aliveCount('blue');
     if (red === 0 || blue === 0) this._endRound(red === 0 && blue === 0 ? null : red === 0 ? 'blue' : 'red');
-    else if (this.roundTime >= R.roundTimeLimit) this._endRound(red === blue ? null : red > blue ? 'red' : 'blue', true);
+    else if (this.roundTime >= this.roundLimit()) this._endRound(red === blue ? null : red > blue ? 'red' : 'blue', true);
   }
 
   _endRound(winner, timeout = false) {
     if (this.roundOver) return;
     this.roundWinner = winner;
-    if (winner) this.roundWins[winner]++;
-    this.matchOver = this.mode === 'kotf' || this.roundWins.red >= R.roundsToWin || this.roundWins.blue >= R.roundsToWin;
+    if (winner && !this.ffa) this.roundWins[winner]++;
+    this.matchOver = this.ffa || this.mode === 'kotf' || this.roundWins.red >= R.roundsToWin || this.roundWins.blue >= R.roundsToWin;
     this.emit({ t: 'roundEnd', w: winner, to: timeout ? 1 : 0, mo: this.matchOver ? 1 : 0, wins: { ...this.roundWins }, z: { ...this.zoneScore } });
     this._roundEndCommon(timeout);
   }
 
   _roundEndCommon(timeout) {
     this.roundOver = true;
-    for (const a of this.archers) a.cheer = !!this.roundWinner && a.alive && a.team === this.roundWinner;
     this.roundEndTimer = 3;
+    if (this.ffa) {
+      const w = typeof this.roundWinner === 'number' ? this.archers[this.roundWinner] : null;
+      for (const a of this.archers) a.cheer = a === w && a.alive;
+      this.hud.centre(w ? `${w.isPlayer ? 'You win' : `${escapeHtml(w.name)} wins`} the free-for-all${timeout ? ' on kills' : ''}` : 'Nobody survived', 3);
+      return;
+    }
+    for (const a of this.archers) a.cheer = !!this.roundWinner && a.alive && a.team === this.roundWinner;
     const name = this.roundWinner === 'blue' ? 'Blue' : this.roundWinner === 'red' ? 'Red' : null;
     this.hud.centre(name ? `${name} ${this.matchOver ? 'wins the match' : 'take the round'}${timeout ? ' on time' : ''}` : 'Round drawn', 3);
   }
@@ -453,7 +579,7 @@ export class Game {
       return { a, k, sh, h, dmg, hs, acc: sh ? Math.round((h / sh) * 100) : 0, score: k * 100 + dmg + hs * 25 };
     };
     const label = (a) => (a.isPlayer ? 'You' : escapeHtml(a.name) + (a.human ? ' ★' : ''));
-    const all = this.archers.map(rs);
+    const all = this.archers.filter((a) => a.active || a.stats.shots || a.stats.kills).map(rs);
     const mvp = all.slice().sort((x, y) => y.score - x.score)[0];
     const table = (team) => {
       const rows = all.filter((r) => r.a.team === team).sort((x, y) => y.score - x.score).slice(0, 8);
@@ -461,8 +587,22 @@ export class Game {
         rows.map((r) => `<tr class="${r.a.isPlayer ? 'you' : ''}"><td>${label(r.a)}</td><td>${r.k}</td><td>${r.acc}%</td><td>${Math.round(r.dmg)}</td></tr>`).join('') + '</table></div>';
     };
     const me = rs(this.me);
-    const w = this.roundWinner === 'blue' ? 'Blue' : this.roundWinner === 'red' ? 'Red' : null;
     const scope = this.matchOver ? 'match' : 'round';
+    if (this.ffa) {
+      const wa = typeof this.roundWinner === 'number' ? this.archers[this.roundWinner] : null;
+      const rows = all.sort((x, y) => y.score - x.score).slice(0, 12);
+      this.menus.showRound({
+        title: wa ? `${wa.isPlayer ? 'You win' : `${escapeHtml(wa.name)} wins`} the free-for-all` : 'Nobody survived',
+        subtitle: `Your match: ${me.k} kills, ${me.acc}% accuracy.`,
+        mvp: `MVP: <b>${label(mvp.a)}</b> – ${mvp.k} kills, ${mvp.acc}% accuracy, ${Math.round(mvp.dmg)} damage`,
+        tables: `<div><h3>Free-for-all</h3><table><tr><th>Archer</th><th>Kills</th><th>Acc</th><th>Dmg</th></tr>` +
+          rows.map((r) => `<tr class="${r.a.isPlayer ? 'you' : ''}"><td><span class="swatch" style="background:#${(r.a.colour || 0).toString(16).padStart(6, '0')}"></span> ${label(r.a)}</td><td>${r.k}</td><td>${r.acc}%</td><td>${Math.round(r.dmg)}</td></tr>`).join('') + '</table></div>',
+        matchOver: true,
+        online: this.role === 'client',
+      });
+      return;
+    }
+    const w = this.roundWinner === 'blue' ? 'Blue' : this.roundWinner === 'red' ? 'Red' : null;
     this.menus.showRound({
       title: this.matchOver ? (w ? `${w} win the match` : 'Match drawn') : (w ? `${w} take round ${this.round}` : `Round ${this.round} drawn`),
       subtitle: this.mode === 'kotf'
@@ -555,22 +695,28 @@ export class Game {
     for (const a of this.archers) a.roundStart = { ...a.stats };
     this.roundOver = !!w.roundOver;
     this.menus.hideAll();
-    this.hud.centre(`Joined <b>${escapeHtml(w.room.name)}</b><br><small>You are ${me.team === 'blue' ? 'Blue' : 'Red'}${w.room.isPublic ? '' : ` · private code ${escapeHtml(w.room.id)}`}</small>`, 4);
+    const side = this.ffa ? 'In a free-for-all' : `You are ${me.team === 'blue' ? 'Blue' : 'Red'}`;
+    this.hud.centre(`Joined <b>${escapeHtml(w.room.name)}</b><br><small>${side}${w.room.isPublic ? '' : ` · party code <b>${escapeHtml(w.room.id)}</b>`}</small>`, 5);
     this.input.enabled = true;
     this.input.lock();
   }
 
   _applyMatchInfo(m) {
     this.mode = m.m;
+    if (m.lay) this.applyLayout(m.lay);
     this.combat.friendlyFire = !!m.ff;
     this.zone.visible = this.mode === 'kotf';
   }
 
   _applyRoster(list) {
-    for (const [i, name, human] of list) {
+    for (const [i, name, human, active] of list) {
       const a = this.archers[i];
       a.human = !!human;
       a.name = human ? name : a.botName;
+      if (active !== undefined && !!active !== a.active) {
+        a.active = !!active;
+        if (!a.active) { a.alive = false; a.pos.set(0, -500, 0); a.deathTime = 99; }
+      }
     }
   }
 
@@ -801,6 +947,7 @@ export class Game {
     this.time += dt;
     if (!this.roundOver || this.mode === 'tdm') this.ai.update(dt);
     for (const a of this.archers) {
+      if (a.active === false) continue;
       if (a.remote) a.remoteTick(dt, this.world); else a.physics(dt, this.world);
       if (!a.alive) a.deathTime += dt;
     }
@@ -830,6 +977,7 @@ export class Game {
         this._clientTick(simDt);
       } else {
         for (const a of this.archers) {
+          if (a.active === false) continue;
           a.physics(simDt, this.world);
           if (!a.alive) a.deathTime += simDt;
         }
@@ -846,7 +994,7 @@ export class Game {
       }
       const me = this.me;
       if (!me.alive && (!this.player.spectating || !this.player.spectating.alive)) {
-        this.player.spectating = this.teams[me.team].find((a) => a.alive && !a.isPlayer) || null;
+        this.player.spectating = this.spectateTarget(me);
       }
       this.player.updateCamera(dt);
       this.hud.update(dt);
@@ -879,7 +1027,7 @@ export class Game {
     if (!this.adaptive) this.adaptive = { scale: 1, cooldown: 2 };
     const ad = this.adaptive;
     ad.cooldown -= 0.5;
-    if (ad.cooldown > 0 || this.state !== 'playing') return;
+    if (ad.cooldown > 0 || this.state !== 'playing' || (this.settings && this.settings.resolution !== 'auto')) return;
     let next = ad.scale;
     if (fps < 50 && ad.scale > 0.55) next = Math.max(0.55, ad.scale - 0.1);
     else if (fps > 58 && ad.scale < 1) next = Math.min(1, ad.scale + 0.05);

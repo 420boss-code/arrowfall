@@ -21,3 +21,5 @@ services:
         sync: false
       - key: ALLOW_SIGNUP       # "0" closes self sign-up at every start; anything else leaves it open
         value: "1"
+      - key: ALLOW_GUESTS       # "0" switches guest play off at every start; anything else leaves it on
+        value: "1"

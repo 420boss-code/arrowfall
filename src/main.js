@@ -48,11 +48,26 @@ async function showLogin() {
   setTimeout(() => $('nwPass').focus(), 30);
   // offer self sign-up only while the admin allows it
   $('nwSignupShow').hidden = true;
+  $('nwGuest').hidden = true;
   try {
     const r = await fetch('/api/signup-status');
-    if (r.ok) $('nwSignupShow').hidden = !(await r.json()).open;
+    if (r.ok) { const st = await r.json(); $('nwSignupShow').hidden = !st.open; $('nwGuest').hidden = !st.guests; }
   } catch { /* stays hidden */ }
 }
+
+// guests get a one-day session with no number: they can join games but not create them
+$('nwGuest').addEventListener('click', async () => {
+  const err = $('nwLoginErr');
+  err.textContent = '';
+  try {
+    const r = await fetch('/api/guest', { method: 'POST', credentials: 'same-origin' });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) { err.textContent = data.error || 'Guest play is not available.'; return; }
+    launch(data);
+  } catch {
+    err.textContent = 'Could not reach the server.';
+  }
+});
 
 let newSession = null;
 $('nwSignupShow').addEventListener('click', () => { showCard('nwSignupForm'); $('nwSignupErr').textContent = ''; setTimeout(() => $('nwSignupName').focus(), 30); });

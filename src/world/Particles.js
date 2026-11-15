@@ -148,7 +148,7 @@ export class Particles {
           { size: 0.35 + Math.random() * 0.3, grow: 0.7, life: 1.1 + Math.random() * 0.8, grav: -0.04, drag: 2.2, alpha: 0.75, r: v, gg: v, b: v });
       }
     }
-    const team = TEAM[a.team] || TEAM.blue;
+    const team = a.colour !== undefined ? new THREE.Color(a.colour) : TEAM[a.team] || TEAM.blue;
     for (let k = 0; k < 16 * n; k++) {
       const c = Math.random() < 0.75 ? team : new THREE.Color(0x5a3b22);
       const s = 0.7 + Math.random() * 0.5;

@@ -78,9 +78,10 @@ export class ViewModel {
     const a = g.me;
     this.visible = !!(g.player && g.player.firstPerson && a && a.alive && g.state === 'playing');
     if (!this.visible) return;
-    if (this.team !== a.team) {
-      this.team = a.team;
-      this.mats.sleeve.color.set(a.team === 'blue' ? CONFIG.colours.blue : CONFIG.colours.red);
+    const sleeve = a.colour ?? (a.team === 'blue' ? CONFIG.colours.blue : CONFIG.colours.red);
+    if (this.team !== sleeve) {
+      this.team = sleeve;
+      this.mats.sleeve.color.set(sleeve);
     }
     // follow the camera
     this.root.position.copy(camera.position);

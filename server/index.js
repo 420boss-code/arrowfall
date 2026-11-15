@@ -10,7 +10,7 @@ import { WebSocketServer } from 'ws';
 import { Room } from './Room.js';
 import { CONFIG } from '../src/config.js';
 import { cleanName } from '../src/net/protocol.js';
-import { Auth, maskIp } from './auth.js';
+import { Auth, maskIp, validNumber } from './auth.js';
 
 const auth = new Auth();
 
@@ -60,7 +60,8 @@ function readBody(req, limit = 2048) {
   });
 }
 
-async function createFromRequest(req, res) {
+async function createFromRequest(req, res, sess) {
+  if (sess.role === 'guest') return json(res, 403, { error: 'Guests can join games but not create them. Get a player code to make your own.' });
   const ip = clientIp(req);
   const now = Date.now();
   if (now - (lastCreate.get(ip) || 0) < 10_000) return json(res, 429, { error: 'Please wait a few seconds before creating another server.' });
@@ -69,12 +70,15 @@ async function createFromRequest(req, res) {
   if (rooms.size >= SC.maxRooms) return json(res, 503, { error: 'All server slots are busy – try joining one instead.' });
   let body;
   try { body = JSON.parse(await readBody(req)); } catch { return json(res, 400, { error: 'Bad request.' }); }
+  const lay = body.layout || {};
   const room = createRoom({
-    name: cleanName(body.name, 28, 'Archery server'),
+    layout: lay.type === 'ffa' ? { type: 'ffa', count: lay.count, bots: lay.bots !== false } : { type: 'teams', red: lay.red, blue: lay.blue, bots: lay.bots !== false },
+    party: !!body.party,
+    name: cleanName(body.name, 28, body.party ? 'Party' : 'Archery server'),
     mode: MODES.includes(body.mode) ? body.mode : 'tdm',
     difficulty: DIFFS.includes(body.difficulty) ? body.difficulty : 'normal',
     friendlyFire: !!body.friendlyFire,
-    isPublic: body.isPublic !== false,
+    isPublic: body.party ? false : body.isPublic !== false,
     ownerIp: ip,
   });
   lastCreate.set(ip, now);
@@ -124,12 +128,31 @@ async function bodyJson(req) {
 function onlinePlayers() {
   const out = [];
   for (const r of rooms.values()) {
-    for (const [ws, c] of r.clients) out.push({ key: `${r.id}:${c.idx}`, room: r.name, roomId: r.id, name: c.name, faction: c.faction ? c.faction.tag : null, player: ws.player || null, ip: maskIp(ws.ip), ws });
+    for (const [ws, c] of r.clients) out.push({ key: `${r.id}:${c.idx}`, room: r.name, roomId: r.id, name: c.name, faction: c.faction ? c.faction.tag : null, player: ws.player || null, guest: ws.role === 'guest', ip: maskIp(ws.ip), ws });
   }
   return out;
 }
 
 function findPlayer(key) { return onlinePlayers().find((p) => p.key === key) || null; }
+
+// What a player may see about each friend: nothing unless the friend has added them back.
+const ONLINE_MS = 75_000;
+function friendStatus(me, ids) {
+  const idx = auth.presenceIndex();
+  const inRoom = new Map();
+  for (const r of rooms.values()) for (const ws of r.clients.keys()) if (ws.player) inRoom.set(ws.player, r);
+  const now = Date.now();
+  return ids.map((id) => {
+    const e = idx.get(id);
+    if (!e || !e.friends.has(me)) return { id, status: 'pending' };
+    const r = inRoom.get(id);
+    if (r) {
+      const i = r.info();
+      return { id, status: 'playing', room: { id: r.id, name: i.name, layout: i.layout, party: i.party, humans: i.humans, max: i.max, mode: i.mode } };
+    }
+    return { id, status: now - e.lastSeen < ONLINE_MS ? 'online' : 'offline' };
+  });
+}
 
 async function api(req, res, p, ip, sess) {
   if (p === '/api/login' && req.method === 'POST') {
@@ -146,7 +169,13 @@ async function api(req, res, p, ip, sess) {
     res.setHeader('Set-Cookie', auth.cookie(r.token, isSecure(req)));
     return json(res, 201, { role: r.role, player: r.player, code: r.code, factions: auth.state.factions });
   }
-  if (p === '/api/signup-status') return json(res, 200, { open: auth.state.signupOpen });
+  if (p === '/api/signup-status') return json(res, 200, { open: auth.state.signupOpen, guests: auth.state.guestsOpen });
+  if (p === '/api/guest' && req.method === 'POST') {
+    const r = auth.guest(ip);
+    if (r.error) return json(res, r.status, { error: r.error });
+    res.setHeader('Set-Cookie', auth.cookie(r.token, isSecure(req)));
+    return json(res, 201, { role: r.role, player: null, guestId: r.guestId, factions: auth.state.factions });
+  }
   if (p === '/api/logout' && req.method === 'POST') {
     auth.logout(req);
     res.setHeader('Set-Cookie', auth.clearCookie());
@@ -155,12 +184,19 @@ async function api(req, res, p, ip, sess) {
   if (p === '/api/health') return json(res, 200, { ok: true, rooms: rooms.size, players: [...rooms.values()].reduce((s, r) => s + r.humans, 0) });
   if (!sess) return json(res, 401, { error: 'Login required.' });
 
-  if (p === '/api/session') return json(res, 200, { role: sess.role, player: sess.player, factions: auth.state.factions });
+  if (p === '/api/session') return json(res, 200, { role: sess.role, player: sess.player, guestId: sess.guestId || null, factions: auth.state.factions });
   if (p === '/api/servers' && req.method === 'GET') {
     const list = [...rooms.values()].filter((r) => r.isPublic).map((r) => r.info()).sort((a, b) => b.humans - a.humans);
     return json(res, 200, list);
   }
-  if (p === '/api/servers' && req.method === 'POST') return createFromRequest(req, res);
+  if (p === '/api/servers' && req.method === 'POST') return createFromRequest(req, res, sess);
+  if (p === '/api/friends' && req.method === 'POST') {
+    if (!sess.player) return json(res, 403, { error: sess.role === 'guest' ? 'Guests cannot use friends. Get a player code first.' : 'Friends need a player number (admins log in with a password).' });
+    const body = (await bodyJson(req)) || {};
+    const ids = [...new Set((Array.isArray(body.ids) ? body.ids : []).map(Number))].filter((n) => validNumber(n) && n !== sess.player).slice(0, 100);
+    auth.setFriends(sess, ids);
+    return json(res, 200, { you: sess.player, friends: friendStatus(sess.player, ids) });
+  }
 
   // ---- admin only
   if (!p.startsWith('/api/admin/')) return json(res, 404, { error: 'Not found.' });
@@ -168,11 +204,12 @@ async function api(req, res, p, ip, sess) {
   if (p === '/api/admin/state') {
     return json(res, 200, {
       factions: auth.state.factions,
-      bans: auth.state.bans.map((b) => ({ id: b.id, name: b.name, at: b.at, ip: maskIp(b.ip) })),
+      bans: auth.state.bans.map((b) => ({ id: b.id, name: b.name, at: b.at, ip: maskIp(b.ip), guestOnly: !!b.guestOnly })),
       players: onlinePlayers().map(({ ws, ...rest }) => rest),
       codes: auth.playerList(),
       signupOpen: auth.state.signupOpen,
       nextNumber: auth.suggestNumber(),
+      guestsOpen: auth.state.guestsOpen,
     });
   }
   if (req.method !== 'POST') return json(res, 405, { error: 'Use POST.' });
@@ -185,6 +222,11 @@ async function api(req, res, p, ip, sess) {
       return json(res, 200, { ok: true, note: 'Other admin sessions have been logged out. It lasts until the server restarts; set ADMIN_PASSWORD on your host to keep it.' });
     }
     case '/api/admin/signup': auth.setSignup(body.open); return json(res, 200, { ok: true, open: auth.state.signupOpen });
+    case '/api/admin/guests': {
+      auth.setGuests(body.open);
+      if (!auth.state.guestsOpen) for (const pl of onlinePlayers()) if (pl.guest) pl.ws.close(4001, 'Guests closed');
+      return json(res, 200, { ok: true, open: auth.state.guestsOpen });
+    }
     case '/api/admin/code': {
       const r = auth.createCode(body.player, body.name);
       return r.error ? json(res, 400, r) : json(res, 201, r);
@@ -209,7 +251,13 @@ async function api(req, res, p, ip, sess) {
       const pl = findPlayer(String(body.key));
       if (!pl) return json(res, 404, { error: 'That player has left.' });
       if (p === '/api/admin/ban') {
-        // banning blocks the player's own number, so only that person is affected
+        // banning blocks the player's own number, so only that person is affected;
+        // a guest has no number, so guest logins from their address are blocked instead
+        if (pl.guest) {
+          auth.ban(pl.ws.ip, pl.name, { guestOnly: true });
+          for (const other of onlinePlayers()) if (other.guest && other.ws.ip === pl.ws.ip) other.ws.close(4003, 'Banned');
+          return json(res, 200, { ok: true, ipBan: true });
+        }
         if (!pl.player) return json(res, 400, { error: 'That player is logged in as admin.' });
         auth.revoke(pl.player);
         for (const other of onlinePlayers()) if (other.player === pl.player) other.ws.close(4003, 'Banned');
@@ -240,6 +288,7 @@ wss.on('connection', (ws, req) => {
   const wsSess = auth.session(req, ip);
   if (!wsSess) { ws.close(4001, 'Login required'); return; }
   ws.player = wsSess.player || null;
+  ws.role = wsSess.role;
   const n = (connsPerIp.get(ip) || 0) + 1;
   connsPerIp.set(ip, n);
   if (n > SC.maxConnectionsPerIp) { ws.close(1008, 'Too many connections'); }

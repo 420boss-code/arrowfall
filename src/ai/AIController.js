@@ -148,7 +148,7 @@ export class AIController {
 
   _perceive() {
     const a = this.archer;
-    const enemies = this.game.teams[a.team === 'red' ? 'blue' : 'red'];
+    const enemies = this.game.enemiesOf(a);
     let best = null, bestD = Infinity, checks = 0;
     // keep current target if still visible (cheap, stable)
     if (this.target && this.target.alive && this._canSee(this.target)) {
@@ -200,10 +200,25 @@ export class AIController {
 
     // out of arrows → scavenge or retreat
     if (a.arrows <= 0 && this.state !== S.SCAVENGE) {
-      const p = this.game.projectiles.nearestPickup(a.pos, 30);
-      const corpse = this.game.nearestLootableCorpse(a, 35);
+      const p = this.game.projectiles.nearestPickup(a.pos, 70);
+      const corpse = this.game.nearestLootableCorpse(a, 70);
       if (p || corpse) { this.setState(S.SCAVENGE); }
       else if (this.state !== S.RETREAT) this.setState(S.RETREAT);
+    }
+
+    // hunting: once a round drags on, bots hear roughly where the nearest enemy is (sooner in small games)
+    const g = this.game;
+    const huntAfter = g.activeCount() <= 20 ? 40 : 120;
+    if (!seen && g.roundTime > huntAfter && (this.state === S.ADVANCE || this.state === S.HOLD || this.state === S.PATROL) && now - (this.lastHuntAt ?? -99) > 6) {
+      this.lastHuntAt = now;
+      let best = null, bd = Infinity;
+      for (const e of g.enemiesOf(a)) { if (!e.alive) continue; const d = e.pos.distanceToSquared(a.pos); if (d < bd) { bd = d; best = e; } }
+      if (best) {
+        this.lastKnown.set(best.pos.x + (Math.random() - 0.5) * 10, 0, best.pos.z + (Math.random() - 0.5) * 10);
+        this.hasLastKnown = true;
+        this.lastSeen = now - 3;
+        if (this.state !== S.ADVANCE) this.setState(S.ADVANCE);
+      }
     }
 
     // healing: kneel to bandage when nobody is in sight, or detour to a herb when hurt
@@ -301,7 +316,7 @@ export class AIController {
           this._enterCoverOrEngage(true);
           break;
         }
-        const home = _v.set(this.side * 110, 0, a.pos.z * 0.8);
+        const home = a.homeX !== undefined ? _v.set(a.homeX, 0, a.homeZ) : _v.set(this.side * 110, 0, a.pos.z * 0.8);
         if (threat) {
           const away = _w.subVectors(a.pos, threat).setY(0).normalize();
           home.addScaledVector(away, 25);
@@ -322,8 +337,8 @@ export class AIController {
       }
       case S.SCAVENGE: {
         if (a.arrows > 0 && (seen || a.arrows >= 8 || this.stateTime > 15)) { this.setState(seen ? S.ENGAGE : S.ADVANCE); break; }
-        const p = this.game.projectiles.nearestPickup(a.pos, 35);
-        const corpse = this.game.nearestLootableCorpse(a, 40);
+        const p = this.game.projectiles.nearestPickup(a.pos, 75);
+        const corpse = this.game.nearestLootableCorpse(a, 75);
         const tgt = corpse && (!p || corpse.pos.distanceTo(a.pos) < p.pos.distanceTo(a.pos)) ? corpse.pos : p ? p.pos : null;
         if (!tgt) { this.setState(a.arrows > 0 ? S.ADVANCE : S.RETREAT); break; }
         this.moveTarget.set(tgt.x, 0, tgt.z);
@@ -555,7 +570,7 @@ export class AIController {
     const ax = a.pos.x, az = a.pos.z;
     const bx = t.pos.x - ax, bz = t.pos.z - az;
     const L2 = bx * bx + bz * bz;
-    for (const m of this.game.teams[a.team]) {
+    for (const m of this.game.alliesOf(a)) {
       if (m === a || !m.alive) continue;
       const px = m.pos.x - ax, pz = m.pos.z - az;
       const s = (px * bx + pz * bz) / L2;

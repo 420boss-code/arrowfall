@@ -76,7 +76,12 @@ export class Minimap {
     for (const h of g.health.herbs) if (h.ready) dot(h.x, h.z, '#ff7a96', 1.3);
     const myTeam = me.team;
     for (const a of g.archers) {
-      if (a === me) continue;
+      if (a === me || !a.active) continue;
+      if (g.ffa) {
+        // free-for-all: only rivals close enough to hear
+        if (a.alive && a.pos.distanceTo(me.pos) < 22) dot(a.pos.x, a.pos.z, `#${(a.colour || 0xff4a3a).toString(16).padStart(6, '0')}`, 1.5);
+        continue;
+      }
       if (a.team === myTeam) {
         const c = myTeam === 'blue' ? '90,160,255' : '255,110,90';
         dot(a.pos.x, a.pos.z, `rgba(${c},${a.alive ? 1 : 0.35})`, a.human ? 1.9 : 1.4);

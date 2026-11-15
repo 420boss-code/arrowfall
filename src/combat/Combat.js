@@ -67,7 +67,7 @@ export class Combat {
   onArrowHit(arrow, victim, headshot) {
     const shooter = arrow.owner;
     if (!victim.alive) return true;
-    const sameTeam = shooter && shooter.team === victim.team;
+    const sameTeam = shooter && !this.game.isEnemy(shooter, victim);
     if (sameTeam && !this.friendlyFire) return false;
     if (this.game.role === 'client') {
       // online: the server decides damage; locally the arrow only sticks and thuds
@@ -143,7 +143,7 @@ export class Combat {
       const fx = -Math.sin(victim.yaw), fz = -Math.cos(victim.yaw);
       victim.deathDir = (d.x * fx + d.z * fz) < 0 ? 1 : -1;
     } else victim.deathDir = 1;
-    if (killer && killer.team !== victim.team) killer.stats.kills++;
+    if (killer && this.game.isEnemy(killer, victim)) killer.stats.kills++;
     this.game.emit({ t: 'kill', v: victim.idx, s: killer ? killer.idx : -1, h: headshot ? 1 : 0, d: victim.deathDir, st: victim.deathStyle });
     this.game.onKill(victim, killer, headshot);
   }

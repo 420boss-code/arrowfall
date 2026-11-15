@@ -26,6 +26,7 @@ const POLE_L = new THREE.Vector3(-1, -0.6, 0.3), POLE_R = new THREE.Vector3(1, 0
 const S_ELL = new THREE.Vector3(), S_ELR = new THREE.Vector3(), S_NOCK = new THREE.Vector3(), S_TIP = new THREE.Vector3();
 const FLASH = new THREE.Color(1, 0.55, 0.5);
 const FP_HIDDEN = [1, 2, 3, 4, 5, 6, 7, 12, 13, 14, 15, 16]; // torso, head, hood, arms, quiver, string, arrow, belt
+const TEAM_PARTS = new Set(['torso', 'hood', 'uArmL', 'uArmR']), DARK_PARTS = new Set(['hips', 'thighL', 'thighR']);
 const ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
 
 export function bowGeometry() {
@@ -84,6 +85,18 @@ export class ArcherRenderer {
       this.baseColours.push(list);
     });
     this.boxes.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  }
+
+  // Repaint an archer's clothes (team colours, or an individual colour in a free-for-all).
+  recolour(i, main, dark) {
+    const base = this.baseColours[i];
+    PARTS.forEach((p, k) => {
+      if (TEAM_PARTS.has(p)) base[k].copy(main);
+      else if (DARK_PARTS.has(p)) base[k].copy(dark);
+      else return;
+      this.boxes.setColorAt(i * NP + k, base[k]);
+    });
+    this.boxes.instanceColor.needsUpdate = true;
   }
 
   // Box stretched between local points a and b, with a reference "forward" axis for orientation.
@@ -147,6 +160,13 @@ export class ArcherRenderer {
 
   _animate(a, i, dt, hideHead) {
     const base = i * NP;
+    if (a.active === false) {
+      // unused slot in this layout: draw nothing
+      if (!a._hidden) { for (let k = 0; k < NP; k++) this.boxes.setMatrixAt(base + k, ZERO); this.bows.setMatrixAt(i, ZERO); a._hidden = true; }
+      this.bodyMatrices[i].makeTranslation(0, -500, 0);
+      return;
+    }
+    a._hidden = false;
     const T = this.clock;
     const alive = a.alive;
     const spd = alive ? a.speed : 0;

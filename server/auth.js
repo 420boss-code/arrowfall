@@ -25,7 +25,7 @@ const SESSION_DAYS = 14;
 const COOKIE = 'af_session';
 const MAX_PLAYER = 999;            // admin-made codes: 3-digit player numbers (8-digit codes)
 const SELF_MIN = 100000, SELF_MAX = 999999; // self-made codes: 6-digit player numbers (11-digit codes)
-const validNumber = (n) => Number.isInteger(n) && ((n >= 1 && n <= MAX_PLAYER) || (n >= SELF_MIN && n <= SELF_MAX));
+export const validNumber = (n) => Number.isInteger(n) && ((n >= 1 && n <= MAX_PLAYER) || (n >= SELF_MIN && n <= SELF_MAX));
 
 function hash(password, salt = crypto.randomBytes(16).toString('hex')) {
   return `${salt}:${crypto.scryptSync(String(password), salt, 32).toString('hex')}`;
@@ -90,6 +90,10 @@ export class Auth {
     this.envRevoked = new Set(String(process.env.REVOKED_PLAYERS || '').split(',').map((s) => Number(s.trim())).filter(validNumber));
     if (process.env.ALLOW_SIGNUP === '0') this.state.signupOpen = false;
     else if (typeof this.state.signupOpen !== 'boolean') this.state.signupOpen = true;
+    if (process.env.ALLOW_GUESTS === '0') this.state.guestsOpen = false;
+    else if (typeof this.state.guestsOpen !== 'boolean') this.state.guestsOpen = true;
+    this.guests = new Map();    // ip -> [timestamps] (rate limit)
+    this.guestTimes = [];
     this.signups = new Map();   // ip -> [timestamps] (rate limit)
     this.signupTimes = [];      // all sign-ups in the last hour
     if (notes.length) console.log(notes.join('\n'));
@@ -145,6 +149,50 @@ export class Auth {
 
   setSignup(open) { this.state.signupOpen = !!open; this._save(); }
 
+  // ---------------------------------------------------------------- guests
+  // A guest gets a one-day session with no player number: they can join games but cannot make
+  // servers or use friends. Closing guest access ends every guest session at its next request.
+  guest(ip) {
+    if (!this.state.guestsOpen) return { error: 'Guest play is switched off. Ask the admin for a player code.', status: 403 };
+    if (this.isGuestBanned(ip)) return { error: 'Access denied.', status: 403 };
+    const now = Date.now(), hour = 3600_000;
+    const mine = (this.guests.get(ip) || []).filter((t) => now - t < hour);
+    this.guestTimes = this.guestTimes.filter((t) => now - t < hour);
+    if (mine.length >= 10) return { error: 'Too many guest logins from here – try again later.', status: 429 };
+    if (this.guestTimes.length >= 300) return { error: 'Too many guests right now – try again later.', status: 429 };
+    mine.push(now); this.guests.set(ip, mine); this.guestTimes.push(now);
+    const token = crypto.randomBytes(24).toString('base64url');
+    const guestId = crypto.randomInt(1000, 10000);
+    this.sessions.set(token, { role: 'guest', ip, player: null, guestId, expires: now + 864e5, gen: this.state.adminGen });
+    return { role: 'guest', player: null, guestId, token };
+  }
+
+  setGuests(open) {
+    this.state.guestsOpen = !!open;
+    if (!open) for (const [t, s] of this.sessions) if (s.role === 'guest') this.sessions.delete(t);
+    this._save();
+  }
+
+  // ---------------------------------------------------------------- friends
+  // Friend lists live in the browser; each poll tells the server which numbers this session cares
+  // about. A friend's status is only revealed when they have added you back.
+  setFriends(sess, ids) {
+    sess.friends = new Set(ids);
+  }
+
+  // player number -> { lastSeen, friends } merged across that player's sessions
+  presenceIndex() {
+    const idx = new Map();
+    for (const s of this.sessions.values()) {
+      if (!s.player) continue;
+      const e = idx.get(s.player) || { lastSeen: 0, friends: new Set() };
+      e.lastSeen = Math.max(e.lastSeen, s.lastSeen || 0);
+      if (s.friends) for (const f of s.friends) e.friends.add(f);
+      idx.set(s.player, e);
+    }
+    return idx;
+  }
+
   revoke(n) {
     n = Number(n);
     if (!this.state.revoked.includes(n)) this.state.revoked.push(n);
@@ -167,12 +215,15 @@ export class Auth {
   }
 
   // ---------------------------------------------------------------- address bans (kept for abuse)
-  isBanned(ip) { return this.state.bans.some((b) => b.ip === ip); }
+  // A full ban stops every login from the address. A guest ban (guestOnly) only stops guest logins,
+  // so people with their own codes on a shared network (a school, say) are not caught by it.
+  isBanned(ip) { return this.state.bans.some((b) => b.ip === ip && !b.guestOnly); }
+  isGuestBanned(ip) { return this.state.bans.some((b) => b.ip === ip); }
 
-  ban(ip, name) {
-    if (!ip || this.isBanned(ip)) return;
-    this.state.bans.push({ id: crypto.randomBytes(4).toString('hex'), ip, name: cleanName(name, 24, 'Unknown'), at: new Date().toISOString() });
-    for (const [t, s] of this.sessions) if (s.ip === ip) this.sessions.delete(t);
+  ban(ip, name, { guestOnly = false } = {}) {
+    if (!ip || this.state.bans.some((b) => b.ip === ip && (!b.guestOnly || guestOnly))) return;
+    this.state.bans.push({ id: crypto.randomBytes(4).toString('hex'), ip, name: cleanName(name, 24, 'Unknown'), at: new Date().toISOString(), ...(guestOnly ? { guestOnly: true } : {}) });
+    for (const [t, s] of this.sessions) if (s.ip === ip && (!guestOnly || s.role === 'guest')) this.sessions.delete(t);
     this._save();
   }
 
@@ -223,9 +274,10 @@ export class Auth {
     const t = this._token(req);
     const s = t && this.sessions.get(t);
     if (!s) return null;
-    const dead = s.expires < Date.now() || this.isBanned(ip) ||
-      (s.role === 'admin' ? s.gen !== this.state.adminGen : this.isRevoked(s.player));
+    const dead = s.expires < Date.now() || (s.role === 'guest' ? this.isGuestBanned(ip) : this.isBanned(ip)) ||
+      (s.role === 'admin' ? s.gen !== this.state.adminGen : s.role === 'guest' ? !this.state.guestsOpen : this.isRevoked(s.player));
     if (dead) { this.sessions.delete(t); return null; }
+    s.lastSeen = Date.now();
     return s;
   }
 
