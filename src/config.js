@@ -160,6 +160,7 @@ export const CONFIG = {
     grassNearDistance: 40,
     grassFarFraction: 0.25,
     flowerCount: 1600,
+    deathParticles: true,   // smoke poof, cloth scraps and motes when an archer falls
     grassModelCount: 3500,  // clumps of a loaded grass model, scattered through the built-in grass
     grassModelHeight: 0.5,  // metres
     grassModelBrightness: 1.45, // textured clumps are lifted to match the lit field

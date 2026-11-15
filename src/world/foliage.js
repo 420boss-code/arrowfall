@@ -229,7 +229,11 @@ export function addWind(mat, { amp = 0.03, gust = 0, twoSided = false, uniforms 
     sh.uniforms.uTime = uniforms.uTime;
     sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>', `
       #include <begin_vertex>
-      vec3 ip = instanceMatrix[3].xyz;
+      #ifdef USE_INSTANCING
+        vec3 ip = instanceMatrix[3].xyz;
+      #else
+        vec3 ip = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;   // single meshes (e.g. healing herbs)
+      #endif
       float ph = ip.x * 0.31 + ip.z * 0.23;
       float hgt = max(position.y, 0.0);
       float g = ${gust.toFixed(3)} * (0.5 + 0.5 * sin(ip.x * 0.12 + ip.z * 0.05 + uTime * 1.6));

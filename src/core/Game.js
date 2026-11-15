@@ -18,6 +18,7 @@ import { Projectiles } from '../combat/Projectiles.js';
 import { Combat } from '../combat/Combat.js';
 import { Health } from '../combat/Health.js';
 import { WorldOverlay } from '../ui/WorldOverlay.js';
+import { Particles } from '../world/Particles.js';
 import { AIManager } from '../ai/AIManager.js';
 import { Audio } from '../audio/Audio.js';
 import { HUD } from '../ui/HUD.js';
@@ -102,9 +103,10 @@ export class Game {
       this.hud = new HUD(this);
       this.minimap = new Minimap(document.getElementById('minimap'), this);
       this.overlay = new WorldOverlay(this);
+      this.particles = new Particles(this);
       this.menus = new Menus(this);
     } else {
-      this.audio = this.input = this.hud = this.minimap = this.menus = this.overlay = NOOP;
+      this.audio = this.input = this.hud = this.minimap = this.menus = this.overlay = this.particles = NOOP;
       this.player = null;
     }
     this._buildZone();
@@ -218,6 +220,7 @@ export class Game {
 
   _beginRoundCommon() {
     this.health.resetHerbs();
+    this.particles.clear();
     this.hud.clearDeathRecap();
     for (const a of this.archers) a.roundStart = { ...a.stats };
     this.roundTime = 0;
@@ -279,6 +282,8 @@ export class Game {
   // ------------------------------------------------------------------ events and queries
   onKill(victim, killer, headshot) {
     this.hud.killFeed(killer, victim, headshot);
+    // death poof (no smoke over your own first-person view)
+    if (CONFIG.graphics.deathParticles) this.particles.death(victim, headshot, victim.isPlayer && this.player && this.player.firstPerson);
     if (victim.isPlayer && this.player) {
       this.audio.stopDraw();
       this.hud.deathRecap(victim, killer);
@@ -860,6 +865,7 @@ export class Game {
       const fpHide = this.player.firstPerson && (this.me.alive || this.me.deathTime < 1.8) && this.state === 'playing';
       this.archerRenderer.update(dt, cp, fpHide);
       this.health.animate(dt);
+      this.particles.update(dt);
       this.overlay.update(dt);
       this.audio.setListener(cp, this.state === 'playing' && this.me.alive ? this.me.yaw : this.player.specYaw, this.terrain.forestBlend);
       this.audio.update(dt);
