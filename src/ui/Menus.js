@@ -100,6 +100,7 @@ export class Menus {
     $('btnPauseAdmin').addEventListener('click', () => this.showAdmin('pauseMenu'));
     $('admBack').addEventListener('click', () => this.hideAdmin());
     $('admRefresh').addEventListener('click', () => this.refreshAdmin());
+    $('admGrantPoints').addEventListener('click', () => this.grantAdminPoints());
     $('admAdminBtn').addEventListener('click', () => this.changePassword('admin', 'admAdmin'));
     $('admCodeBtn').addEventListener('click', () => this.createCode());
     $('admSignup').addEventListener('change', async (e) => {
@@ -124,6 +125,10 @@ export class Menus {
     if (this.session && this.session.player) {
       this.pollFriends();
       this.socialTimer = setInterval(() => this.pollFriends(), 8000);
+    }
+    if (window.__afOpenAdmin && this.session && this.session.role === 'admin') {
+      window.__afOpenAdmin = false;
+      queueMicrotask(() => this.showAdmin('startMenu'));
     }
   }
 
