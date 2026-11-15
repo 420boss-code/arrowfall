@@ -55,7 +55,10 @@ export class Archer {
     this.drawing = false;
     this.drawTime = 0;          // seconds held
     this.fullDrawHeld = 0;      // seconds held at full draw (for sway)
-    this.releaseTimer = 0;      // seconds since last release (animation + cooldown)
+    this.releaseTimer = 9;      // seconds since last release (animation + cooldown); none yet
+    this.stabT = 0;             // knife: time left in the stab animation
+    this.stabCooldown = 0;
+    this.stabPending = false;   // the blade has not landed yet (offline / server)
     this.speed = 0;
     this.animPhase = 0;
     this.hitFlash = 0;
@@ -151,6 +154,8 @@ export class Archer {
     if (this.hitReactT > 0) this.hitReactT -= dt;
     if (this.landT > 0) this.landT -= dt;
     if (this.pickupT > 0) this.pickupT -= dt;
+    if (this.stabT > 0) this.stabT = Math.max(0, this.stabT - dt);
+    if (this.stabCooldown > 0) this.stabCooldown -= dt;
   }
 
   // Server-side tick for a human-controlled archer: position comes from the client.
@@ -180,7 +185,7 @@ export class Archer {
   }
 
   canDraw() {
-    return this.alive && this.arrows > 0 && this.releaseTimer > B.releaseCooldown;
+    return this.alive && this.arrows > 0 && this.releaseTimer > B.releaseCooldown && this.stabT <= 0;
   }
 
   updateDraw(dt) {

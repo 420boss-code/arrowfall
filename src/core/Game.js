@@ -25,6 +25,7 @@ import { HUD } from '../ui/HUD.js';
 import { Minimap } from '../ui/Minimap.js';
 import { Menus } from '../ui/Menus.js';
 import { loadSettings, applySettings } from '../ui/Settings.js';
+import { propGeometries } from '../world/propModels.js';
 import { HEADER, STRIDE, FL, ZONE, CLIENT_RATE, vec3 } from '../net/protocol.js';
 
 const R = CONFIG.rules;
@@ -43,7 +44,7 @@ const NOOP = new Proxy(function () {}, {
 const emptyStats = () => ({ kills: 0, deaths: 0, shots: 0, hits: 0, damage: 0, headshots: 0 });
 
 export class Game {
-  constructor(container, { headless = false, treeModels = null } = {}) {
+  constructor(container, { headless = false, treeModels = null, propModels = null } = {}) {
     this.headless = headless;
     this.settings = headless ? {} : loadSettings();
     this.role = headless ? 'server' : 'offline';
@@ -84,7 +85,8 @@ export class Game {
     this.archers = [...this.teams.blue, ...this.teams.red];
     this.archers.forEach((a, i) => { a.idx = i; });
 
-    this.archerRenderer = new ArcherRenderer(this.scene, this.archers);
+    this.props = propGeometries(propModels);
+    this.archerRenderer = new ArcherRenderer(this.scene, this.archers, this.props);
     this.projectiles = new Projectiles(this.scene, this.world);
     this.projectiles.archers = this.archers;
     this.projectiles.bodyMatrices = this.archerRenderer.bodyMatrices;
@@ -100,7 +102,7 @@ export class Game {
       this.input = new Input(this.renderer.domElement);
       this.input.onUnlock = () => { if (this.state === 'playing') this.pause(); };
       this.player = new Player(this, this.teams.blue[0], this.camera);
-      this.viewModel = new ViewModel(this);
+      this.viewModel = new ViewModel(this, this.props);
       this.projectiles.listener = this.player.archer;
       this.hud = new HUD(this);
       this.minimap = new Minimap(document.getElementById('minimap'), this);
@@ -375,8 +377,8 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ events and queries
-  onKill(victim, killer, headshot) {
-    this.hud.killFeed(killer, victim, headshot);
+  onKill(victim, killer, headshot, weapon = 'bow') {
+    this.hud.killFeed(killer, victim, headshot, weapon);
     // death poof (no smoke over your own first-person view)
     if (CONFIG.graphics.deathParticles && this.settings.deathParticles !== false) this.particles.death(victim, headshot, victim.isPlayer && this.player && this.player.firstPerson);
     if (victim.isPlayer && this.player) {
@@ -393,6 +395,14 @@ export class Game {
     if (!this.player) return;
     if (shooter && shooter.isPlayer) { if (this.settings.damageNumbers !== false) this.overlay.damageNumber(victim, dmg, crit); victim.lastHitByMe = this.time; }
     if (victim.isPlayer) this.player.shake = Math.min(1, this.player.shake + 0.35 + dmg / 120);
+  }
+
+  // Knife: animate at once; online, the server decides whether it lands.
+  requestStab() {
+    const me = this.me;
+    if (!me || !me.alive) return;
+    if (!this.combat.stab(me)) return;
+    if (this.role === 'client') this.net.send({ t: 'stab' });
   }
 
   requestBandage() {
@@ -814,6 +824,7 @@ export class Game {
         if (!v) return;
         v.hitFlash = 0.15;
         if (e.kb) Combat.hitReaction(v, e.kb[0], e.kb[1]);
+        if (e.w === 'k') this.audio.impact('stab', v.pos, v === me);
         if (s === me) this.hud.hitMarker(!!e.h, !!e.k);
         this.onHitFeedback(v, s || null, e.dm || 0, !!e.h);
         if (v === me) {
@@ -825,13 +836,21 @@ export class Game {
         }
         break;
       }
+      case 'stab': {
+        const a = this.archers[e.i];
+        if (!a || a === me) return;
+        a.stabT = CONFIG.knife.time;
+        a.drawing = false; a.drawTime = 0;
+        this.audio.swish(a.pos, false);
+        break;
+      }
       case 'kill': {
         const v = this.archers[e.v], s = this.archers[e.s] || null;
         if (!v) return;
         if (v.alive) this._applyDeath(v, e.d);
         v.deathStyle = e.st || 0;
         v.bandaging = false;
-        this.onKill(v, s, !!e.h);
+        this.onKill(v, s, !!e.h, e.w === 'k' ? 'knife' : 'bow');
         break;
       }
       case 'respawn': {
@@ -953,6 +972,7 @@ export class Game {
     }
     this.archerRenderer.update(dt, this.camera.position, false); // keeps body matrices for stuck arrows
     this.projectiles.update(dt);
+    this.combat.updateMelee();
     if (!this.roundOver || this.mode === 'kotf') this.health.update(dt);
     this._expireT = (this._expireT || 0) + dt;
     if (this._expireT > 1) { this.projectiles.ageStuck(this._expireT); this.projectiles.expireOld(); this._expireT = 0; }
@@ -983,6 +1003,7 @@ export class Game {
         }
       }
       this.projectiles.update(simDt);
+      if (!client) this.combat.updateMelee();
       if (!client && !this.roundOver) this.health.update(simDt);
       this._expireT = (this._expireT || 0) + simDt;
       if (this._expireT > 1) { this.projectiles.ageStuck(this._expireT); this.projectiles.expireOld(); this._expireT = 0; }

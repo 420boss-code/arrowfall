@@ -4,6 +4,7 @@ import { CONFIG } from '../config.js';
 import { clamp } from '../core/utils.js';
 
 const B = CONFIG.bow;
+const K = CONFIG.knife;
 const _o = new THREE.Vector3(), _d = new THREE.Vector3();
 
 // Standard normal sample (Box–Muller)
@@ -75,7 +76,17 @@ export class Combat {
       return true;
     }
     const head = headshot && B.headshotMultiplier > 1;
-    let dmg = Combat.impactDamage(arrow.vel.length(), arrow.crit) * (head ? B.headshotMultiplier : 1);
+    const dmg = Combat.impactDamage(arrow.vel.length(), arrow.crit) * (head ? B.headshotMultiplier : 1);
+    const hl = Math.hypot(arrow.vel.x, arrow.vel.z) || 1;
+    return this.dealDamage(victim, shooter, dmg, {
+      crit: arrow.crit, head, dir: arrow.dir, kx: arrow.vel.x / hl, kz: arrow.vel.z / hl, knock: B.knockback, at: arrow.pos,
+    });
+  }
+
+  // Shared by arrows and the knife (offline / server only). Applies invulnerability frames, knockback,
+  // feedback and the kill. Returns true, or 'deflect' when the hit was absorbed by the iframes.
+  dealDamage(victim, shooter, dmg, { crit = false, head = false, dir, kx, kz, knock, at, weapon = 'bow' }) {
+    const sameTeam = shooter && !this.game.isEnemy(shooter, victim);
     // invulnerability frames: during the window only a harder hit counts, and only the difference
     const now = this.game.time;
     if (now < victim.iframeUntil) {
@@ -90,27 +101,73 @@ export class Combat {
     victim.hp -= dmg;
     victim.hitFlash = 0.15;
     victim.lastHitBy = shooter;
-    victim.lastHitDir = arrow.dir.clone();
+    victim.lastHitDir = dir.clone();
     if (shooter && !sameTeam) {
       shooter.stats.hits++;
       shooter.stats.damage += Math.min(dmg, dmg + Math.min(0, victim.hp));
-      if (head || arrow.crit) shooter.stats.headshots++;
+      if (head || crit) shooter.stats.headshots++;
     }
-    // knockback along the arrow's horizontal direction
-    const hl = Math.hypot(arrow.vel.x, arrow.vel.z) || 1;
-    const kx = (arrow.vel.x / hl) * B.knockback, kz = (arrow.vel.z / hl) * B.knockback;
-    if (!victim.remote) Combat.applyKnockback(victim, kx, kz);
-    this.game.health.onDamage(victim, dmg, shooter, arrow.crit);
-    Combat.hitReaction(victim, kx, kz);
-    this.game.audio.impact('body', arrow.pos, victim.isPlayer);
-    if (shooter && shooter.isPlayer) this.game.hud.hitMarker(arrow.crit, victim.hp <= 0);
+    const bx = kx * knock, bz = kz * knock;
+    if (!victim.remote) Combat.applyKnockback(victim, bx, bz);
+    this.game.health.onDamage(victim, dmg, shooter, crit);
+    Combat.hitReaction(victim, bx, bz);
+    this.game.audio.impact(weapon === 'knife' ? 'stab' : 'body', at, victim.isPlayer);
+    if (shooter && shooter.isPlayer) this.game.hud.hitMarker(crit, victim.hp <= 0);
     if (victim.isPlayer) this.game.hud.damageIndicator(shooter ? shooter.pos : null);
     if (victim.ai) victim.ai.onDamaged(shooter);
     const killed = victim.hp <= 0;
-    this.game.emit({ t: 'hit', v: victim.idx, s: shooter ? shooter.idx : -1, h: arrow.crit ? 1 : 0, k: killed ? 1 : 0, kb: [+kx.toFixed(2), +kz.toFixed(2)], dm: Math.round(dmg) });
-    this.game.onHitFeedback(victim, shooter, Math.round(dmg), arrow.crit);
-    if (killed) this.kill(victim, shooter, head);
+    this.game.emit({ t: 'hit', v: victim.idx, s: shooter ? shooter.idx : -1, h: crit ? 1 : 0, k: killed ? 1 : 0, kb: [+bx.toFixed(2), +bz.toFixed(2)], dm: Math.round(dmg), ...(weapon === 'knife' ? { w: 'k' } : {}) });
+    this.game.onHitFeedback(victim, shooter, Math.round(dmg), crit);
+    if (killed) this.kill(victim, shooter, head, weapon);
     return true;
+  }
+
+  // ---------------------------------------------------------------- knife
+  // Start a stab (all roles animate it; only offline / server resolve the hit, a moment later).
+  stab(a) {
+    if (!a.alive || a.stabCooldown > 0 || a.bandaging) return false;
+    a.stabT = K.time;
+    a.stabCooldown = K.cooldown;
+    a.stabPending = this.game.role !== 'client';
+    if (a.drawing) { a.drawing = false; a.drawTime = 0; a.fullDrawHeld = 0; if (a.isPlayer) this.game.audio.stopDraw(); }
+    this.game.audio.swish(a.pos, a.isPlayer);
+    this.game.emit({ t: 'stab', i: a.idx });
+    return true;
+  }
+
+  // The archer this stab would land on: the nearest rival within reach and inside the arc in front.
+  stabTarget(a) {
+    const fx = -Math.sin(a.yaw), fz = -Math.cos(a.yaw);
+    const cosArc = Math.cos((K.arc * Math.PI) / 180);
+    let best = null, bd = K.reach;
+    for (const v of this.game.archers) {
+      if (v === a || !v.alive || v.active === false) continue;
+      if (!this.game.isEnemy(a, v) && !this.friendlyFire) continue;
+      const dx = v.pos.x - a.pos.x, dz = v.pos.z - a.pos.z, dy = v.pos.y - a.pos.y;
+      const d = Math.hypot(dx, dz);
+      if (d > bd || Math.abs(dy) > 1.4) continue;
+      if (d > 0.3 && (dx * fx + dz * fz) / d < cosArc) continue;
+      best = v; bd = d;
+    }
+    return best;
+  }
+
+  // Resolve stabs whose blade has reached its target (offline / server).
+  updateMelee() {
+    for (const a of this.game.archers) {
+      if (!a.stabPending || K.time - a.stabT < K.hitAt) continue;
+      a.stabPending = false;
+      if (!a.alive) continue;
+      const v = this.stabTarget(a);
+      if (!v) continue;
+      // from behind: the victim is facing away from the attacker
+      const dx = a.pos.x - v.pos.x, dz = a.pos.z - v.pos.z, l = Math.hypot(dx, dz) || 1;
+      const vfx = -Math.sin(v.yaw), vfz = -Math.cos(v.yaw);
+      const behind = (dx * vfx + dz * vfz) / l < -0.35;
+      const dir = _d.set(-dx / l, 0, -dz / l);
+      _o.set(v.pos.x, v.pos.y + 1.2, v.pos.z);
+      this.dealDamage(v, a, K.damage * (behind ? K.backstab : 1), { crit: behind, dir, kx: dir.x, kz: dir.z, knock: K.knockback, at: _o, weapon: 'knife' });
+    }
   }
 
   // Flinch in the direction the arrow was travelling.
@@ -129,7 +186,7 @@ export class Combat {
     a.onGround = false;
   }
 
-  kill(victim, killer, headshot) {
+  kill(victim, killer, headshot, weapon = 'bow') {
     victim.hp = 0;
     victim.alive = false;
     victim.drawing = false;
@@ -144,7 +201,7 @@ export class Combat {
       victim.deathDir = (d.x * fx + d.z * fz) < 0 ? 1 : -1;
     } else victim.deathDir = 1;
     if (killer && this.game.isEnemy(killer, victim)) killer.stats.kills++;
-    this.game.emit({ t: 'kill', v: victim.idx, s: killer ? killer.idx : -1, h: headshot ? 1 : 0, d: victim.deathDir, st: victim.deathStyle });
-    this.game.onKill(victim, killer, headshot);
+    this.game.emit({ t: 'kill', v: victim.idx, s: killer ? killer.idx : -1, h: headshot ? 1 : 0, d: victim.deathDir, st: victim.deathStyle, ...(weapon === 'knife' ? { w: 'k' } : {}) });
+    this.game.onKill(victim, killer, headshot, weapon);
   }
 }

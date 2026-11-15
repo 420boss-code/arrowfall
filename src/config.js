@@ -97,6 +97,21 @@ export const CONFIG = {
     releaseCooldown: 0.1,
     drawZoom: 0.15,          // field of view narrows by up to 15% as you draw (f² curve)
     zoomFov: 52,             // right mouse adds a further optional zoom
+    reloadTime: 0.8,         // after a shot: reach back to the quiver and nock the next arrow (animation)
+  },
+
+  // Knife (F): a quick stab at the nearest enemy in front of you, for when they get too close to shoot.
+  knife: {
+    damage: 30,              // four stabs from the front (two from behind) kill from full health
+    backstab: 2,             // damage multiplier when striking from behind (counts as critical)
+    reach: 2.1,              // metres, chest to chest
+    arc: 55,                 // degrees either side of where you face
+    time: 0.45,              // length of the stab animation
+    hitAt: 0.17,             // the blade lands this far into the stab
+    cooldown: 0.75,          // seconds between stabs
+    knockback: 4,
+    aiRange: 1.9,            // bots stab enemies this close
+    aiChargeRange: 14,       // bots out of arrows run at enemies within this range
   },
 
   arrows: {

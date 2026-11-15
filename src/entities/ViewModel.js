@@ -7,19 +7,31 @@ import { clamp, lerp } from '../core/utils.js';
 import { bowGeometry } from './ArcherRenderer.js';
 import { arrowGeometry } from '../combat/Projectiles.js';
 
-const BOW_SCALE = 0.82;
+const BOW_SCALE = 0.74;
+const K = CONFIG.knife;
+const RELOAD = CONFIG.bow.reloadTime;
+const ARROW_SCALE = 0.62;
+const ease = (t) => t * t * (3 - 2 * t);
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _y = new THREE.Vector3(0, 1, 0), _d = new THREE.Vector3();
 const _q = new THREE.Quaternion(), _e = new THREE.Euler();
+const NEG_Z = new THREE.Vector3(0, 0, -1);
 const FWD = new THREE.Vector3(0, 0, 1);
 const AIM_POINT = new THREE.Vector3(0, 0, -60);
 
-// Poses: [drawn, relaxed, sprinting]
-const GRIP = [new THREE.Vector3(-0.17, -0.07, -0.58), new THREE.Vector3(-0.26, -0.3, -0.5), new THREE.Vector3(-0.3, -0.42, -0.42)];
-const BOW_ROT = [new THREE.Euler(0, 0.04, -0.22), new THREE.Euler(-0.35, 0.3, 0.85), new THREE.Euler(-0.6, 0.45, 1.15)];
-const FULL_NOCK = new THREE.Vector3(-0.1, -0.12, -0.26); // anchor just below the cheek
+// Poses: [drawn, relaxed, sprinting]. Drawn: the bow hand sits just left of and below the crosshair,
+// canted a little, so the arrow runs from the bottom of the view straight to the crosshair.
+const GRIP = [new THREE.Vector3(-0.036, -0.108, -0.6), new THREE.Vector3(-0.27, -0.35, -0.56), new THREE.Vector3(-0.32, -0.5, -0.46)];
+const BOW_ROT = [new THREE.Euler(0, 0, 0.26), new THREE.Euler(-0.3, 0.25, 0.55), new THREE.Euler(-0.55, 0.4, 0.95)];
+const REST_NOCK = new THREE.Vector3(0.0, -0.092, -0.47);   // string at rest, arrow nocked
+const FULL_NOCK = new THREE.Vector3(0.0, -0.092, -0.17);   // anchor under the cheek
+const HAND_REST = new THREE.Vector3(0.22, -0.44, -0.44);
+const FOLLOW = new THREE.Vector3(0.32, -0.2, -0.2);       // after the loose the hand flies back and out of view
+const QUIVER = new THREE.Vector3(0.34, 0.24, 0.06);        // over the right shoulder, out of view
+const RETURN = new THREE.Vector3(0.32, 0.17, -0.34);       // coming back into view with the next arrow
+const ARROW_FROM_QUIVER = new THREE.Vector3(-0.25, -0.55, -0.8).normalize();
 
 export class ViewModel {
-  constructor(game) {
+  constructor(game, props = null) {
     this.game = game;
     this.scene = new THREE.Scene();
     this.root = new THREE.Group();
@@ -52,8 +64,11 @@ export class ViewModel {
     this.strTop = seg(this.mats.string);
     this.strBot = seg(this.mats.string);
     this.arrow = new THREE.Mesh(arrowGeometry(), new THREE.MeshLambertMaterial({ vertexColors: true }));
-    this.arrow.scale.setScalar(0.92);
+    this.arrow.scale.setScalar(ARROW_SCALE);
     this.root.add(this.arrow);
+    this.knife = new THREE.Mesh(props ? props.knife : new THREE.BoxGeometry(0.02, 0.03, 0.25), new THREE.MeshLambertMaterial({ vertexColors: !!props }));
+    this.knife.scale.setScalar(1.05);
+    this.root.add(this.knife);
     for (const o of this.root.children) o.frustumCulled = false;
     this.bow.frustumCulled = false;
 
@@ -92,13 +107,16 @@ export class ViewModel {
     this.sun.position.copy(g.terrain.sunDir);
 
     const k = clamp(dt * 12, 0, 1);
-    const releasing = !a.drawing && a.releaseTimer < 0.3;
-    this.drawBlend = lerp(this.drawBlend, a.drawing || releasing ? 1 : 0, k);
+    const rt = a.releaseTimer;
+    const stabbing = a.stabT > 0;
+    const su = stabbing ? 1 - a.stabT / K.time : 1;
+    const reloading = !a.drawing && a.arrows > 0 && rt < RELOAD && !stabbing;
+    // the bow stays up after a shot while the next arrow is fetched, then lowers
+    const stance = !stabbing && !a.bandaging && (a.drawing || rt < (a.arrows > 0 ? RELOAD + 0.3 : 0.3));
+    this.drawBlend = lerp(this.drawBlend, stance ? 1 : 0, k);
     this.sprintBlend = lerp(this.sprintBlend, a.sprinting && !a.drawing ? 1 : 0, clamp(dt * 6, 0, 1));
-    const db = this.drawBlend, sb = this.sprintBlend;
-    // reload: after a shot the hand leaves frame over the shoulder for the next arrow, then returns
-    const reloading = !a.drawing && a.arrows > 0 && a.releaseTimer > 0.12 && a.releaseTimer < 0.75;
-    const rl = reloading ? Math.sin(((a.releaseTimer - 0.12) / 0.63) * Math.PI) : 0;
+    this.stabBlend = lerp(this.stabBlend || 0, stabbing ? 1 : 0, clamp(dt * 16, 0, 1));
+    const db = this.drawBlend, sb = this.sprintBlend, kb = this.stabBlend;
     // bandaging and picking up
     this.bandBlend = lerp(this.bandBlend || 0, a.bandaging ? 1 : 0, clamp(dt * 8, 0, 1));
     const bb = this.bandBlend;
@@ -111,15 +129,18 @@ export class ViewModel {
     this.lag.y = lerp(this.lag.y, clamp((input ? input.mouseDY : 0) * 0.0006, -0.04, 0.04), clamp(dt * 10, 0, 1));
     const crouchDip = a.crouching ? -0.015 : 0;
     const off = _a.set(bobX + this.lag.x, bobY + this.lag.y + crouchDip, 0);
-    // recoil after release
-    const rec = releasing ? Math.sin((a.releaseTimer / 0.3) * Math.PI) : 0;
+    // the bow kicks forward a touch on release
+    const rec = !a.drawing && rt < 0.25 && db > 0.5 ? Math.sin((rt / 0.25) * Math.PI) : 0;
 
-    // bow rig pose: blend relaxed → drawn, and relaxed → sprint
+    // bow rig pose: relaxed → sprint, then → drawn; stabbing drops it out of the way
     const grip = new THREE.Vector3().copy(GRIP[1]).lerp(GRIP[2], sb).lerp(GRIP[0], db).add(off);
-    grip.z -= rec * 0.035; grip.y += rec * 0.012;
-    this.bowRig.position.copy(grip);
+    grip.z -= rec * 0.03;
+    grip.x -= kb * 0.08; grip.y -= kb * 0.12;
     const r0 = BOW_ROT[1], r2 = BOW_ROT[2], r1 = BOW_ROT[0];
-    _e.set(lerp(lerp(r0.x, r2.x, sb), r1.x, db) - rec * 0.05, lerp(lerp(r0.y, r2.y, sb), r1.y, db), lerp(lerp(r0.z, r2.z, sb), r1.z, db) + (a.crouching ? 0.05 : 0));
+    _e.set(lerp(lerp(r0.x, r2.x, sb), r1.x, db) - rec * 0.04 - kb * 0.3, lerp(lerp(r0.y, r2.y, sb), r1.y, db), lerp(lerp(r0.z, r2.z, sb), r1.z, db) + (a.crouching ? 0.05 : 0) + kb * 0.3);
+    // bandaging: the bow arm comes across the body
+    if (bb > 0.01) { grip.lerp(new THREE.Vector3(-0.1, -0.36, -0.4), bb); _e.z += bb * 0.6; }
+    this.bowRig.position.copy(grip);
     this.bowRig.rotation.copy(_e);
     this.bowRig.updateMatrix();
     this.bow.updateMatrix();
@@ -127,47 +148,80 @@ export class ViewModel {
     // string tips in camera space
     const tipT = new THREE.Vector3(0, 0.62, 0.04).applyMatrix4(this.bow.matrix).applyMatrix4(this.bowRig.matrix);
     const tipB = new THREE.Vector3(0, -0.62, 0.04).applyMatrix4(this.bow.matrix).applyMatrix4(this.bowRig.matrix);
-    const rest = new THREE.Vector3().addVectors(tipT, tipB).multiplyScalar(0.5);
-    const draw = a.drawing ? a.drawFrac : 0;
-    const nock = rest.clone().lerp(_b.copy(FULL_NOCK).add(off), draw * db);
-    this._segment(this.strTop, tipT, nock, 0.0045);
-    this._segment(this.strBot, nock, tipB, 0.0045);
-
-    // left arm holds the bow; while bandaging the forearm comes across the body
-    if (bb > 0.01) { grip.lerp(new THREE.Vector3(-0.1, -0.36, -0.4), bb); this.bowRig.position.copy(grip); this.bowRig.rotation.z += bb * 0.6; this.bowRig.updateMatrix(); }
+    const restMid = new THREE.Vector3().addVectors(tipT, tipB).multiplyScalar(0.5);
+    // where the nock sits on the string when drawn: the rest point of the drawn pose, carried by the bow
+    const restNock = _b.copy(REST_NOCK).add(off);
+    restNock.z -= rec * 0.03;
+    const restAt = new THREE.Vector3().copy(restMid).lerp(restNock, db);
+    const draw = a.drawing ? ease(a.drawFrac) : 0;
+    const nock = restAt.clone().lerp(_d.copy(FULL_NOCK).add(off), draw * db);
+    // after the loose the string snaps back and shivers
+    const stringMid = a.drawing ? nock : restAt.clone().addScaledVector(NEG_Z, !a.drawing && rt < 0.25 ? Math.sin(rt * 90) * 0.02 * (1 - rt / 0.25) : 0);
+    this._segment(this.strTop, tipT, stringMid, 0.004);
+    this._segment(this.strBot, stringMid, tipB, 0.004);
     this.strTop.visible = this.strBot.visible = bb < 0.5;
+
+    // left arm holds the bow
     this.leftHand.position.copy(grip);
     this.leftHand.quaternion.copy(this.bowRig.quaternion);
-    this.leftHand.scale.set(0.055, 0.1, 0.07);
-    const elbowL = new THREE.Vector3(-0.3, -0.36, -0.22).lerp(new THREE.Vector3(-0.34, -0.4, -0.34), db).add(off);
-    this._segment(this.leftFore, grip.clone().add(_b.set(-0.01, -0.03, 0.03)), elbowL, 0.055);
+    this.leftHand.scale.set(0.05, 0.095, 0.065);
+    const elbowL = new THREE.Vector3(-0.3, -0.36, -0.22).lerp(new THREE.Vector3(-0.22, -0.3, -0.32), db).add(off);
+    this._segment(this.leftFore, grip.clone().add(_d.set(-0.01, -0.03, 0.03)), elbowL, 0.052);
     this._segment(this.leftUpper, elbowL, new THREE.Vector3(-0.32, -0.6, 0.1), 0.08);
 
-    // right hand: on the string while drawing, flicks back on release, rests low otherwise
-    const handRest = new THREE.Vector3(0.2, -0.42, -0.42).add(off);
-    const handDraw = nock.clone();
-    if (releasing) handDraw.copy(FULL_NOCK).add(off).add(_b.set(0.05 * rec, 0.03 * rec, 0.06 * rec));
-    const hand = handRest.clone().lerp(handDraw, db);
-    hand.lerp(new THREE.Vector3(0.38, 0.12, -0.12), rl * (1 - db * 0.6));
+    // right hand: on the string while drawing; on release it flies back out of view, reaches over the
+    // shoulder to the quiver and comes back with the next arrow; otherwise it rests low
+    const hand = new THREE.Vector3();
+    let arrowDir = null, arrowFrom = null;
+    const aimDir = new THREE.Vector3();
+    if (a.drawing) {
+      hand.copy(nock);
+      arrowFrom = nock;
+    } else if (rt < 0.14 && db > 0.5 && !stabbing) {
+      hand.copy(FULL_NOCK).add(off).lerp(FOLLOW, ease(rt / 0.14));
+    } else if (reloading && db > 0.5) {
+      const r = (rt - 0.14) / (RELOAD - 0.14);
+      if (r < 0.4) hand.copy(FOLLOW).lerp(QUIVER, ease(r / 0.4));
+      else if (r < 0.55) hand.copy(QUIVER);
+      else {
+        const t = ease((r - 0.55) / 0.45);
+        hand.copy(RETURN).lerp(restAt, t);
+        arrowFrom = hand;
+        arrowDir = new THREE.Vector3().copy(ARROW_FROM_QUIVER).lerp(aimDir.subVectors(AIM_POINT, restAt).normalize(), t).normalize();
+      }
+    } else hand.copy(HAND_REST).add(off).lerp(new THREE.Vector3(0.24, -0.5, -0.36), sb);
     hand.lerp(new THREE.Vector3(0.08, -0.55, -0.42), pk);
     if (bb > 0.01) {
       const w = performance.now() / 1000 * 9;
       hand.lerp(new THREE.Vector3(-0.02 + Math.cos(w) * 0.06, -0.3 + Math.sin(w) * 0.04, -0.36), bb);
     }
+    // knife: wind up low at the right, drive it to the centre, draw it back
+    if (kb > 0.01 || stabbing) {
+      const wind = new THREE.Vector3(0.2, -0.3, -0.34), out = new THREE.Vector3(0.03, -0.09, -0.56);
+      const thrust = su < 0.3 ? 0 : su < 0.5 ? ease((su - 0.3) / 0.2) : 1 - ease((su - 0.5) / 0.5);
+      const kp = wind.clone().lerp(out, thrust).add(off);
+      hand.lerp(kp, kb);
+      this.knife.visible = true;
+      this.knife.position.copy(hand);
+      // blade angled up and across, so it reads on screen rather than pointing straight away
+      _d.set(-0.2, 0.75, -0.55).lerp(_b.set(-0.5, 0.42, -0.75), thrust).normalize();
+      this.knife.quaternion.setFromUnitVectors(NEG_Z, _d);
+    } else this.knife.visible = false;
     this.rightHand.position.copy(hand);
     this.rightHand.quaternion.identity();
     this.rightHand.scale.set(0.045, 0.05, 0.06);
-    const elbowR = new THREE.Vector3(0.24, -0.4, -0.2).lerp(new THREE.Vector3(0.46, -0.44, -0.08), db * (0.3 + 0.7 * draw)).add(off);
+    const elbowR = hand.clone().add(_d.set(0.22, -0.16, 0.2));
     this._segment(this.rightFore, hand, elbowR, 0.05);
-    this._segment(this.rightUpper, elbowR, new THREE.Vector3(0.34, -0.5, 0.25), 0.08);
-    this.rightHand.visible = this.rightFore.visible = this.rightUpper.visible = db > 0.05 || sb < 0.5 || bb > 0.05 || pk > 0.05;
+    this._segment(this.rightUpper, elbowR, new THREE.Vector3(0.34, -0.55, 0.3), 0.08);
+    const handOn = db > 0.05 || sb < 0.5 || bb > 0.05 || pk > 0.05 || kb > 0.05;
+    this.rightHand.visible = this.rightFore.visible = this.rightUpper.visible = handOn;
 
-    // nocked arrow points from the string towards the crosshair
-    this.arrow.visible = a.drawing && a.arrows > 0;
+    // the arrow: on the string pointing at the crosshair while drawing; in the hand while reloading
+    this.arrow.visible = !!arrowFrom && a.arrows > 0 && bb < 0.5;
     if (this.arrow.visible) {
-      _d.subVectors(AIM_POINT, nock).normalize();
-      this.arrow.quaternion.setFromUnitVectors(FWD, _d);
-      this.arrow.position.copy(nock).addScaledVector(_d, CONFIG.arrows.length * 0.92);
+      const dir = arrowDir || aimDir.subVectors(AIM_POINT, arrowFrom).normalize();
+      this.arrow.quaternion.setFromUnitVectors(FWD, dir);
+      this.arrow.position.copy(arrowFrom).addScaledVector(dir, CONFIG.arrows.length * ARROW_SCALE);
     }
   }
 

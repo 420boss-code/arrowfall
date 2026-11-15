@@ -6,6 +6,7 @@ import { clamp, lerp, wrapAngle, approachAngle, DEG } from '../core/utils.js';
 import { Combat } from '../combat/Combat.js';
 
 const AIC = CONFIG.ai;
+const K = CONFIG.knife;
 const G = CONFIG.arrows.gravity;
 const DRAG = CONFIG.arrows.drag;
 
@@ -454,6 +455,7 @@ export class AIController {
       if (a.drawing) { a.drawing = false; a.drawTime = 0; }
       return;
     }
+    if (this._knife(dt)) return;
     const engaging = (this.state === S.ENGAGE || this.state === S.COVER || this.state === S.RETREAT ||
       (this.state === S.ADVANCE && this.game.mode === 'kotf' && this.targetVisible)) && this.target && this.target.alive;
 
@@ -501,6 +503,41 @@ export class AIController {
       else if (this.hasLastKnown) a.yaw = approachAngle(a.yaw, Math.atan2(-(this.lastKnown.x - a.pos.x), -(this.lastKnown.z - a.pos.z)), turnRate * 0.5);
       a.pitch = lerp(a.pitch, 0, clamp(dt * 3, 0, 1));
     }
+  }
+
+  // Knife: an enemy almost on top of us gets stabbed instead of shot; with an empty quiver, a visible
+  // enemy nearby is charged. Returns true when it has taken over this frame.
+  _knife(dt) {
+    const a = this.archer;
+    let near = null, nd = K.aiChargeRange;
+    for (const e of this.game.archers) {
+      if (!e.alive || e.active === false || !this.game.isEnemy(a, e)) continue;
+      const d = Math.hypot(e.pos.x - a.pos.x, e.pos.z - a.pos.z);
+      if (d < nd && Math.abs(e.pos.y - a.pos.y) < 1.4) { nd = d; near = e; }
+    }
+    if (!near) return false;
+    const want = Math.atan2(-(near.pos.x - a.pos.x), -(near.pos.z - a.pos.z));
+    if (nd < K.aiRange + 0.5) {
+      // close quarters: turn to face, step in, stab when lined up
+      a.yaw = approachAngle(a.yaw, want, lerp(5, 9, this.diff.aggression) * dt);
+      a.pitch = lerp(a.pitch, 0, clamp(dt * 6, 0, 1));
+      if (a.drawing && a.drawFrac < 0.6) { a.drawing = false; a.drawTime = 0; }
+      const k = nd > 1.1 ? 0.6 : 0;
+      a.moveDir.set(((near.pos.x - a.pos.x) / nd) * k, ((near.pos.z - a.pos.z) / nd) * k);
+      a.sprinting = false;
+      const facing = Math.abs(wrapAngle(a.yaw - want)) < 25 * DEG;
+      if (facing && nd < K.aiRange && this.reaction <= 0 && a.stabCooldown <= 0 && a.stabT <= 0) this.game.combat.stab(a);
+      return true;
+    }
+    if (a.arrows <= 0) {
+      a.eyePos(_e); near.eyePos(_t);
+      if (this.game.forest.lineOfSight(_e, _t)) {
+        this.moveTarget.set(near.pos.x, 0, near.pos.z);
+        this.wantSprint = true;
+        this.target = near;
+      }
+    }
+    return false;
   }
 
   // Ballistic aim with target leading and difficulty-scaled error. Flight follows the Minecraft

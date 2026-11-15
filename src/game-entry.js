@@ -2,6 +2,7 @@
 import './ui/styles.css';
 import { Game } from './core/Game.js';
 import { loadTreeModels } from './world/treeModels.js';
+import { loadPropModels } from './world/propModels.js';
 
 export async function startGame() {
   const loading = document.getElementById('loading');
@@ -14,10 +15,17 @@ export async function startGame() {
   } catch (e) {
     console.warn('Tree models unavailable, using built-in trees.', e);
   }
+  let propModels = null;
+  try {
+    label.textContent = 'Sharpening knives…';
+    propModels = await loadPropModels();
+  } catch (e) {
+    console.warn('Prop models unavailable, using built-in ones.', e);
+  }
   label.textContent = 'Growing the forest…';
   // let the loading panel paint before the forest is generated
   requestAnimationFrame(() => setTimeout(() => {
-    const game = new Game(document.getElementById('app'), { treeModels });
+    const game = new Game(document.getElementById('app'), { treeModels, propModels });
     window.game = game; // handy for debugging in the console
     loading.classList.add('hidden');
   }, 30));

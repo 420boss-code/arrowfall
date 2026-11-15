@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { CONFIG } from '../config.js';
 import { clamp, lerp, wrapAngle } from '../core/utils.js';
+import { arrowGeometry } from '../combat/Projectiles.js';
 
 const C = CONFIG.colours;
 const PARTS = ['hips', 'torso', 'head', 'hood', 'uArmL', 'fArmL', 'uArmR', 'fArmR', 'thighL', 'shinL', 'thighR', 'shinR',
@@ -15,15 +16,25 @@ const _v = Array.from({ length: 24 }, () => new THREE.Vector3());
 const W = Array.from({ length: 16 }, () => new THREE.Vector3()); // extra scratch for poses
 const _eul = new THREE.Euler();
 const H = CONFIG.health;
+const K = CONFIG.knife;
+const RELOAD = CONFIG.bow.reloadTime;
+const ARROW_L = CONFIG.arrows.length;
+const DRAW_LEN = 0.56;              // grip to anchor at full draw
+const BRACE = 0.13;                 // string to grip at rest
+const FWD_Z = new THREE.Vector3(0, 0, 1), UPV = new THREE.Vector3(0, 1, 0);
+const ease = (t) => t * t * (3 - 2 * t);
+const seg01 = (t, a, b) => clamp((t - a) / (b - a), 0, 1);
+const rotY = (out, x, y, z, th) => out.set(x * Math.cos(th) + z * Math.sin(th), y, -x * Math.sin(th) + z * Math.cos(th));
 const POLE_UP = new THREE.Vector3(0.3, 1, 0.6), POLE_OUT_L = new THREE.Vector3(-1, -0.2, 0.2), POLE_OUT_R = new THREE.Vector3(1, -0.2, 0.2), POLE_DOWN = new THREE.Vector3(0.6, -1, 0.3);
 // kneeling pose (local space): left foot planted in front, right knee on the ground
 const KNEEL = { kL: new THREE.Vector3(-0.11, 0.5, -0.42), fL: new THREE.Vector3(-0.11, 0.03, -0.45), kR: new THREE.Vector3(0.11, 0.07, 0.03), fR: new THREE.Vector3(0.11, 0.05, 0.46) };
 const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _m3 = new THREE.Matrix4();
 const _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3();
 const _q = new THREE.Quaternion();
-const POLE_L = new THREE.Vector3(-1, -0.6, 0.3), POLE_R = new THREE.Vector3(1, 0.1, 0.6);
+const POLE_L = new THREE.Vector3(-1, -0.6, 0.3), POLE_R = new THREE.Vector3(0.55, 0.3, 1); // draw elbow high and back
 // dedicated scratch vectors so animating 40 archers allocates nothing per frame
 const S_ELL = new THREE.Vector3(), S_ELR = new THREE.Vector3(), S_NOCK = new THREE.Vector3(), S_TIP = new THREE.Vector3();
+const S_ANCHOR = new THREE.Vector3(), S_REST = new THREE.Vector3(), S_ADIR = new THREE.Vector3(), S_QDIR = new THREE.Vector3(), S_QBOT = new THREE.Vector3(), S_A = new THREE.Vector3(), S_B = new THREE.Vector3();
 const FLASH = new THREE.Color(1, 0.55, 0.5);
 const FP_HIDDEN = [1, 2, 3, 4, 5, 6, 7, 12, 13, 14, 15, 16]; // torso, head, hood, arms, quiver, string, arrow, belt
 const TEAM_PARTS = new Set(['torso', 'hood', 'uArmL', 'uArmR']), DARK_PARTS = new Set(['hips', 'thighL', 'thighR']);
@@ -46,7 +57,7 @@ export function bowGeometry() {
 }
 
 export class ArcherRenderer {
-  constructor(scene, archers) {
+  constructor(scene, archers, props = null) {
     this.archers = archers;
     this.max = archers.length;
     const boxGeo = new THREE.BoxGeometry(1, 1, 1);
@@ -61,7 +72,15 @@ export class ArcherRenderer {
     this.bows.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.bows.castShadow = true;
     this.bows.frustumCulled = false;
-    scene.add(this.boxes, this.bows);
+    // knife (on the belt, in the hand when stabbing), quiver on the back, and the arrow being nocked or
+    // carried from the quiver: one instanced draw each
+    const vc = () => new THREE.MeshLambertMaterial({ vertexColors: true });
+    const mk = (geo) => { const m = new THREE.InstancedMesh(geo, vc(), this.max); m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.castShadow = true; m.frustumCulled = false; return m; };
+    this.knives = mk(props ? props.knife : new THREE.BoxGeometry(0.02, 0.03, 0.25).setAttribute('color', new THREE.Float32BufferAttribute(new Array(72).fill(0.6), 3)));
+    this.quivers = mk(props ? props.quiver : new THREE.BoxGeometry(0.2, 1, 0.2).translate(0, 0.5, 0).setAttribute('color', new THREE.Float32BufferAttribute(new Array(72).fill(0.4), 3)));
+    this.handArrows = mk(arrowGeometry());
+    this.handArrows.castShadow = false;
+    scene.add(this.boxes, this.bows, this.knives, this.quivers, this.handArrows);
     this.bodyMatrices = archers.map(() => new THREE.Matrix4());
     this.baseColours = [];
     this.frame = 0;
@@ -150,6 +169,30 @@ export class ArcherRenderer {
     }
     this.boxes.instanceMatrix.needsUpdate = true;
     this.bows.instanceMatrix.needsUpdate = true;
+    this.knives.instanceMatrix.needsUpdate = true;
+    this.quivers.instanceMatrix.needsUpdate = true;
+    this.handArrows.instanceMatrix.needsUpdate = true;
+  }
+
+  // Place an instanced prop: origin at p, local -Z along dir (blade / arrow), local +Y toward up.
+  _orient(mesh, i, p, dir, up, scale, world) {
+    _z.copy(dir).negate().normalize();
+    _x.crossVectors(up, _z);
+    if (_x.lengthSq() < 1e-6) _x.set(1, 0, 0); else _x.normalize();
+    _y.crossVectors(_z, _x);
+    _m.makeBasis(_x.multiplyScalar(scale), _y.multiplyScalar(scale), _z.multiplyScalar(scale));
+    _m.setPosition(p.x, p.y, p.z);
+    _m2.multiplyMatrices(world, _m);
+    mesh.setMatrixAt(i, _m2);
+  }
+
+  // Arrow mesh has its tip at the origin pointing +Z: place it from nock along dir.
+  _arrow(i, nock, dir, world) {
+    _q.setFromUnitVectors(FWD_Z, _y.copy(dir).normalize());
+    _m.makeRotationFromQuaternion(_q);
+    _m.setPosition(nock.x + _y.x * ARROW_L, nock.y + _y.y * ARROW_L, nock.z + _y.z * ARROW_L);
+    _m2.multiplyMatrices(world, _m);
+    this.handArrows.setMatrixAt(i, _m2);
   }
 
   flash(archer) {
@@ -162,7 +205,11 @@ export class ArcherRenderer {
     const base = i * NP;
     if (a.active === false) {
       // unused slot in this layout: draw nothing
-      if (!a._hidden) { for (let k = 0; k < NP; k++) this.boxes.setMatrixAt(base + k, ZERO); this.bows.setMatrixAt(i, ZERO); a._hidden = true; }
+      if (!a._hidden) {
+        for (let k = 0; k < NP; k++) this.boxes.setMatrixAt(base + k, ZERO);
+        for (const m of [this.bows, this.knives, this.quivers, this.handArrows]) m.setMatrixAt(i, ZERO);
+        a._hidden = true;
+      }
       this.bodyMatrices[i].makeTranslation(0, -500, 0);
       return;
     }
@@ -188,8 +235,15 @@ export class ArcherRenderer {
     const rx = a.hitReactT > 0 ? Math.sin((1 - a.hitReactT / 0.35) * Math.PI) : 0;     // flinch
     const land = alive && a.landT > 0 ? a.landT / 0.28 : 0;
     const limp = alive && a.hp < H.limpBelow ? 1 : 0;
-    const drawing = alive && (a.drawing || a.releaseTimer < 0.35) && kb < 0.5 && chb < 0.5 ? 1 : 0;
-    const db = blend('_db', drawing, 12);
+    // knife stab: wind up, thrust, recover
+    const su = alive && a.stabT > 0 ? 1 - a.stabT / K.time : 1;
+    const stabbing = su < 1;
+    const thrust = stabbing ? (su < 0.3 ? -0.4 * ease(su / 0.3) : su < 0.5 ? -0.4 + 1.4 * ease((su - 0.3) / 0.2) : 1 - ease((su - 0.5) / 0.5)) : 0;
+    // the bow stays up after a shot while the next arrow comes out of the quiver
+    const rt = a.releaseTimer;
+    const reloading = alive && !a.drawing && a.arrows > 0 && rt < RELOAD;
+    const stance = alive && !stabbing && (a.drawing || rt < (a.arrows > 0 ? RELOAD + 0.3 : 0.35)) && kb < 0.5 && chb < 0.5 ? 1 : 0;
+    const db = blend('_db', stance, 12);
     const crumple = !alive && a.deathStyle === 2 ? clamp(a.deathTime / 0.45, 0, 1) : 0;
     const kneel = Math.max(kb, crumple);
 
@@ -258,14 +312,17 @@ export class ArcherRenderer {
     this._seg(base + 11, kneeR, footR, 0.12, 0.14, fwd, world);
 
     // --- torso: leans with running, crouching, reaching, kneeling; tips along a hit; sways with a limp
-    const lean = run * 0.25 + cb * 0.35 + pk * 0.9 + kb * 0.2 + land * 0.2 - chb * 0.15 + hlz * -0.3 * rx;
+    const lean = run * 0.25 + cb * 0.35 + pk * 0.9 + kb * 0.2 + land * 0.2 - chb * 0.15 + hlz * -0.3 * rx + Math.max(0, thrust) * 0.25;
+    // archers turn side-on to shoot (left shoulder to the target) and twist into a stab
+    const tw = -0.95 * db + 0.35 * thrust;
+    const fwdT = W[7].set(-Math.sin(tw), 0, -Math.cos(tw)), fwdH = W[8].set(-Math.sin(tw * 0.35), 0, -Math.cos(tw * 0.35));
     const sway = hlx * 0.3 * rx + limp * 0.07 * moving * Math.sin(ph);
     const torsoLen = 0.58;
     const neck = _v[6].set(Math.sin(sway) * torsoLen, hipY + Math.cos(lean) * Math.cos(sway) * torsoLen + breathe, -Math.sin(lean) * torsoLen);
     const pelvis = _v[7].set(0, hipY, 0);
-    this._seg(base + 0, _v[8].set(0, hipY - 0.08, 0), _v[9].set(0, hipY + 0.1, 0), 0.34, 0.2, fwd, world);
-    this._seg(base + 1, pelvis, neck, 0.38, 0.22, fwd, world);
-    this._seg(base + 16, _v[8].set(0, hipY + 0.06, 0), _v[9].set(0, hipY + 0.13, 0), 0.4, 0.25, fwd, world);
+    this._seg(base + 0, _v[8].set(0, hipY - 0.08, 0), _v[9].set(0, hipY + 0.1, 0), 0.34, 0.2, fwdH, world);
+    this._seg(base + 1, pelvis, neck, 0.38, 0.22, fwdT, world);
+    this._seg(base + 16, _v[8].set(0, hipY + 0.06, 0), _v[9].set(0, hipY + 0.13, 0), 0.4, 0.25, fwdH, world);
     // head: aims with the bow, glances around when idle, snaps back when hit
     const headC = _v[10].set(neck.x, neck.y + 0.16, neck.z - 0.01);
     if (hideHead) {
@@ -279,13 +336,22 @@ export class ArcherRenderer {
       this._box(base + 2, headC.x, headC.y, headC.z, 0.21, 0.24, 0.22, nod, world, look, tilt);
       this._box(base + 3, headC.x, headC.y + 0.07, headC.z + 0.03, 0.25, 0.16, 0.24, nod, world, look, tilt);
     }
-    // quiver on the back
-    const quiverTop = _v[11].set(neck.x + 0.12, neck.y - 0.05, neck.z + 0.17);
-    _v[12].set(-0.05, hipY + 0.05, 0.15);
-    this._seg(base + 12, _v[12], quiverTop, 0.11, 0.11, fwd, world);
+    // quiver on the back, from the left hip up over the right shoulder, turning with the torso
+    const quiverTop = _v[11].copy(neck).add(rotY(S_A, 0.12, -0.05, 0.17, tw));
+    const quiverBot = S_QBOT.set(0, hipY, 0).add(rotY(S_A, -0.06, 0.06, 0.15, tw * 0.6));
+    const qdir = S_QDIR.subVectors(quiverTop, quiverBot);
+    const qlen = qdir.length() * 1.08;
+    qdir.normalize();
+    this.boxes.setMatrixAt(base + 12, ZERO);
+    _y.copy(qdir); _x.crossVectors(_y, fwdT).normalize(); _z.crossVectors(_x, _y);
+    _m.makeBasis(_x.multiplyScalar(qlen), _y.multiplyScalar(qlen), _z.multiplyScalar(qlen));
+    _m.setPosition(quiverBot.x, quiverBot.y, quiverBot.z);
+    _m2.multiplyMatrices(world, _m);
+    this.quivers.setMatrixAt(i, _m2);
+    const qMouth = S_A.copy(quiverBot).addScaledVector(qdir, qlen);
 
     // --- arms
-    const shL = _v[13].set(neck.x - 0.24, neck.y - 0.06, neck.z), shR = _v[14].set(neck.x + 0.24, neck.y - 0.06, neck.z);
+    const shL = _v[13].copy(neck).add(rotY(_v[12], -0.24, -0.06, 0, tw)), shR = _v[14].copy(neck).add(rotY(_v[12], 0.24, -0.06, 0, tw));
     const upper = 0.3, lower = 0.3;
     const elL = _v[15], hdL = _v[16], elR = _v[17], hdR = _v[18];
     // relaxed pose: arms hang and swing
@@ -297,22 +363,47 @@ export class ArcherRenderer {
     };
     relax(shL, -1, -aSwing, elL, hdL);
     relax(shR, 1, aSwing, elR, hdR);
-    // drawing pose via IK, blended in
+
+    // shooting stance: the string comes back to an anchor under the right cheek, and the bow hand sits
+    // straight out along the aim from there, so the arrow lies on the line of sight
     const pitch = alive ? a.pitch : 0;
     const cp = Math.cos(pitch), sp = Math.sin(pitch);
     const aim = _v[19].set(0, sp, -cp);
-    const df = a.drawing ? a.drawFrac : a.releaseTimer < 0.35 ? 1 : 0;
-    const gripTarget = _v[23].set(shL.x + 0.04, shL.y - 0.05, shL.z).addScaledVector(aim, 0.58);
+    const anchor = S_ANCHOR.set(neck.x + 0.05, neck.y + 0.06, neck.z - 0.13);
+    const gripTarget = _v[23].copy(anchor).addScaledVector(aim, DRAW_LEN);
+    const rest = S_REST.copy(gripTarget).addScaledVector(aim, -BRACE);
+    const df = a.drawing ? ease(a.drawFrac) : 0;
+    const nock = S_NOCK.copy(rest).lerp(anchor, df);
+    // where the right hand is in the stance: on the string while drawing; after the loose it flies back
+    // past the ear, then fetches the next arrow from the quiver and brings it to the string
+    const hand = W[9].copy(nock);
+    let arrowShown = false;
+    const adir = S_ADIR.copy(aim);
+    if (!a.drawing && alive) {
+      const follow = W[10].copy(anchor).add(rotY(W[11], 0.09, 0.03, 0.12, tw));
+      if (rt < 0.14) hand.copy(anchor).lerp(follow, ease(rt / 0.14));
+      else if (reloading) {
+        const r = (rt - 0.14) / (RELOAD - 0.14);
+        const grab = W[11].copy(qMouth).addScaledVector(qdir, 0.04);
+        const lift = W[12].copy(qMouth).addScaledVector(qdir, 0.32);
+        if (r < 0.4) hand.copy(follow).lerp(grab, ease(r / 0.4));
+        else if (r < 0.55) {
+          hand.copy(grab).lerp(lift, ease((r - 0.4) / 0.15));
+          adir.copy(qdir).negate(); arrowShown = true;               // drawn out point first... nock in hand, tip down the quiver
+        } else {
+          const k = ease((r - 0.55) / 0.45);
+          hand.copy(lift).lerp(rest, k);
+          adir.copy(qdir).negate().lerp(aim, k).normalize(); arrowShown = true;
+        }
+      } else if (a.arrows > 0) { hand.copy(rest); arrowShown = db > 0.6; }
+      else hand.copy(follow);
+    } else if (a.drawing) arrowShown = true;
+
     const elLd = ArcherRenderer.ik(shL, gripTarget, upper, lower, POLE_L, S_ELL);
-    // nock point slides back from the bow toward the cheek with draw
-    const pull = 0.12 + df * 0.5;
-    const follow = !a.drawing && a.releaseTimer < 0.35 ? (1 - a.releaseTimer / 0.35) : 0;
-    const nock = S_NOCK.copy(gripTarget).addScaledVector(aim, -pull);
-    if (follow > 0) nock.x += 0.12 * follow;
-    const elRd = ArcherRenderer.ik(shR, nock, upper, lower, POLE_R, S_ELR);
+    const elRd = ArcherRenderer.ik(shR, hand, upper, lower, reloading ? POLE_UP : POLE_R, S_ELR);
     if (db > 0.01) {
       elL.lerp(elLd, db); hdL.lerp(gripTarget, db);
-      elR.lerp(elRd, db); hdR.lerp(nock, db);
+      elR.lerp(elRd, db); hdR.lerp(hand, db);
     }
     // layered actions: move a hand to a target with IK, by weight
     const reach = (sh, el, hd, target, w, pole) => {
@@ -320,10 +411,12 @@ export class ArcherRenderer {
       const e = ArcherRenderer.ik(sh, target, upper, lower, pole, W[15]);
       el.lerp(e, w); hd.lerp(target, w);
     };
-    // reload: after a shot, reach over the shoulder for the next arrow
-    if (alive && !a.drawing && a.arrows > 0 && a.releaseTimer > 0.12 && a.releaseTimer < 0.75 && kb < 0.5) {
-      const r = (a.releaseTimer - 0.12) / 0.63;
-      reach(shR, elR, hdR, W[0].set(quiverTop.x + 0.02, quiverTop.y + 0.14, quiverTop.z + 0.02), Math.sin(r * Math.PI), POLE_UP);
+    // knife: right hand goes back to the hip, then drives forward at chest height
+    if (stabbing) {
+      const back = W[13].copy(neck).add(rotY(W[14], 0.24, -0.34, 0.12, tw));
+      const out = W[14].copy(neck).add(rotY(W[12], 0.07, -0.14, -0.62, tw));
+      const target = thrust < 0 ? back : W[13].copy(back).lerp(out, Math.min(1, thrust));
+      reach(shR, elR, hdR, target, su < 0.12 ? su / 0.12 : su > 0.75 ? (1 - su) / 0.25 : 1, POLE_R);
     }
     // pick up arrows: right hand to the ground in front
     reach(shR, elR, hdR, W[1].set(0.14, 0.08, -0.45), pk, POLE_OUT_R);
@@ -345,15 +438,23 @@ export class ArcherRenderer {
       W[6].set(hlx * 0.1, 0.06, hlz * 0.1).multiplyScalar(rx);
       hdL.add(W[6]); hdR.add(W[6]); elL.addScaledVector(W[6], 0.5); elR.addScaledVector(W[6], 0.5);
     }
-    this._seg(base + 4, shL, elL, 0.11, 0.11, fwd, world);
-    this._seg(base + 5, elL, hdL, 0.09, 0.09, fwd, world);
-    this._seg(base + 6, shR, elR, 0.11, 0.11, fwd, world);
-    this._seg(base + 7, elR, hdR, 0.09, 0.09, fwd, world);
+    this._seg(base + 4, shL, elL, 0.11, 0.11, fwdT, world);
+    this._seg(base + 5, elL, hdL, 0.09, 0.09, fwdT, world);
+    this._seg(base + 6, shR, elR, 0.11, 0.11, fwdT, world);
+    this._seg(base + 7, elR, hdR, 0.09, 0.09, fwdT, world);
 
-    // --- bow at left hand: vertical while drawing, hanging along the arm when relaxed
+    // --- knife: in the hand while stabbing (blade along the forearm), otherwise on the right hip
+    if (stabbing && alive) {
+      const blade = W[12].subVectors(hdR, elR).normalize();
+      this._orient(this.knives, i, hdR, blade, UPV, 1, world);
+    } else {
+      const hip = W[12].set(0, hipY + 0.02, 0).add(rotY(W[13], 0.22, 0, 0.03, tw * 0.35));
+      this._orient(this.knives, i, hip, W[13].set(0.05, -1, 0.1), fwdH, 0.9, world);
+    }
+
+    // --- bow at left hand: upright and canted while shooting, hanging along the arm when relaxed
     const bowM = _m.identity();
     const ang = lerp(0.2, 0, db);
-    // orientation: when drawing aligned with aim pitch, else tilted down along the arm
     const bowPitch = lerp(-0.35, pitch, db);
     _q.setFromAxisAngle(_x.set(1, 0, 0), bowPitch);
     bowM.makeRotationFromQuaternion(_q);
@@ -362,25 +463,26 @@ export class ArcherRenderer {
     if (!a.alive && a.deathTime > 0.5) bowM.setPosition(hdL.x - 0.2, hdL.y, hdL.z);
     _m2.multiplyMatrices(world, bowM);
     this.bows.setMatrixAt(i, _m2);
-    // bowstring tips (bow local: tips at y ±0.62, z +0.04 approx)
+    // bowstring: follows the nock only while drawing; on release it snaps back and shivers
     const tipT = _v[11].set(0, 0.62, 0.04).applyMatrix4(bowM);
     const tipB = _v[12].set(0, -0.62, 0.04).applyMatrix4(bowM);
-    const stringMid = db > 0.5 ? nock : _v[9].addVectors(tipT, tipB).multiplyScalar(0.5);
+    const restMid = _v[9].addVectors(tipT, tipB).multiplyScalar(0.5);
+    if (!a.drawing && rt < 0.25) restMid.addScaledVector(aim, Math.sin(rt * 90) * 0.035 * (1 - rt / 0.25) * db);
+    const stringMid = a.drawing && db > 0.5 ? nock : restMid;
     const side = _v[8].set(1, 0, 0);
     this._seg(base + 13, tipT, stringMid, 0.012, 0.012, side, world);
     this._seg(base + 14, stringMid, tipB, 0.012, 0.012, side, world);
-    // nocked arrow while drawing
-    if (a.drawing && a.alive) {
-      const tip = S_TIP.copy(nock).addScaledVector(aim, 0.76);
-      this._seg(base + 15, nock, tip, 0.018, 0.018, side, world);
-    } else {
-      this.boxes.setMatrixAt(base + 15, ZERO);
-    }
+    // the arrow: on the string while drawing, in the hand while reloading
+    this.boxes.setMatrixAt(base + 15, ZERO);
+    if (arrowShown && alive && db > 0.3) {
+      const from = a.drawing ? nock : hdR;
+      this._arrow(i, from, adir, world);
+    } else this.handArrows.setMatrixAt(i, ZERO);
 
     if (hideHead) {
       // first person: the view model draws arms and bow; looking down you still see your legs
       for (const k of FP_HIDDEN) this.boxes.setMatrixAt(base + k, ZERO);
-      this.bows.setMatrixAt(i, ZERO);
+      for (const m of [this.bows, this.knives, this.quivers, this.handArrows]) m.setMatrixAt(i, ZERO);
     }
 
     // hit flash colouring

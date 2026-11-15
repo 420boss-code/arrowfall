@@ -171,13 +171,19 @@ export class Audio {
     n.connect(bp).connect(g).connect(out);
   }
 
-  // kind: 'wood' | 'ground' | 'body' | 'rock' | 'canopy'
+  // knife: a short, sharp swish (the player's own is never dropped)
+  swish(pos, isPlayer = false) {
+    if (!this.enabled) return;
+    this.whoosh(isPlayer ? null : pos, isPlayer ? 0.55 : 0.4, 0.16);
+  }
+
+  // kind: 'wood' | 'ground' | 'body' | 'rock' | 'canopy' | 'stab'
   impact(kind, pos, isNearPlayer = false) {
     if (!this.enabled) return;
     const sp = this._spatial(pos, 55); if (!sp) return;
     const t = this.ctx.currentTime;
     const out = this._out(sp.gain * (isNearPlayer ? 1.2 : 0.9), sp.pan);
-    const tone = { wood: [220, 0.12, 900], ground: [90, 0.1, 400], body: [120, 0.12, 700], rock: [600, 0.06, 3000], canopy: [300, 0.05, 2500] }[kind] || [150, 0.1, 600];
+    const tone = { wood: [220, 0.12, 900], ground: [90, 0.1, 400], body: [120, 0.12, 700], rock: [600, 0.06, 3000], canopy: [300, 0.05, 2500], stab: [140, 0.09, 1800] }[kind] || [150, 0.1, 600];
     const o = this.ctx.createOscillator();
     o.type = 'sine';
     o.frequency.setValueAtTime(tone[0] * 1.8, t);

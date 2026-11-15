@@ -40,11 +40,11 @@ export class HUD {
     this.centreTimer = seconds;
   }
 
-  killFeed(killer, victim, headshot) {
+  killFeed(killer, victim, headshot, weapon = 'bow') {
     const div = document.createElement('div');
     const name = (a) => `<span class="${a.team}${a.isPlayer ? ' you' : ''}">${a.isPlayer ? 'You' : escapeHtml(a.name)}</span>`;
     div.innerHTML = killer && killer !== victim
-      ? `${name(killer)} ${headshot ? '🎯' : '➶'} ${name(victim)}`
+      ? `${name(killer)} ${weapon === 'knife' ? '🗡' : headshot ? '🎯' : '➶'} ${name(victim)}`
       : `${name(victim)} fell`;
     this.el.feed.prepend(div);
     while (this.el.feed.children.length > 6) this.el.feed.lastChild.remove();

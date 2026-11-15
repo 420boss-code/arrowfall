@@ -114,6 +114,7 @@ export class Room {
       case 'fire': this.game.applyRemoteFire(a, m); break;
       case 'pickup': if (a.alive) this.game.tryPickup(a); break;
       case 'bandage': this.game.health.startBandage(a); break;
+      case 'stab': if (this.game.state === 'playing') this.game.combat.stab(a); break;
     }
   }
 
@@ -127,9 +128,9 @@ export class Room {
       const shared = JSON.stringify({ t: 'ev', list: all });
       for (const [ws, c] of this.clients) {
         // a player already drew their own arrows locally
-        const own = all.some((e) => e.t === 'fire' && e.s === c.idx);
+        const own = all.some((e) => (e.t === 'fire' && e.s === c.idx) || (e.t === 'stab' && e.i === c.idx));
         if (!own) { this._send(ws, shared); continue; }
-        const list = all.filter((e) => !(e.t === 'fire' && e.s === c.idx));
+        const list = all.filter((e) => !(e.t === 'fire' && e.s === c.idx) && !(e.t === 'stab' && e.i === c.idx));
         if (list.length) this._send(ws, { t: 'ev', list });
       }
       g.events = [];

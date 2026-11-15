@@ -67,6 +67,7 @@ export class Player {
 
       if (input.wasPressed('KeyE')) g.tryPickup(a);
       if (input.wasPressed('KeyQ')) g.requestBandage();
+      if (input.wasPressed('KeyF')) g.requestStab();
 
       // bow
       if (input.lmb && !a.drawing && a.canDraw()) {
