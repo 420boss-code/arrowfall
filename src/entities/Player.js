@@ -27,6 +27,9 @@ export class Player {
     this.specYaw = 0;
     this.specPitch = -0.35;
     this.specDistance = 5.5;
+    this.specFree = false;
+    this.specReady = false;
+    this.specPos = new THREE.Vector3();
     this.exertT = 0;
   }
 
@@ -98,13 +101,43 @@ export class Player {
       a.drawing = false;
       this.zoom = lerp(this.zoom, 0, clamp(dt * 10, 0, 1));
       if (a.deathTime > 1.8) {
+        if (!this.specReady) {
+          this.specReady = true;
+          this.specFree = false;
+          this.specYaw = a.yaw;
+          this.specPitch = -0.35;
+          this.specDistance = 5.5;
+          this.specPos.copy(this.camera.position);
+        }
+        if (input.wasPressed('KeyQ')) this.spectating = g.spectateTarget(a, this.spectating, -1);
+        if (input.wasPressed('KeyE')) this.spectating = g.spectateTarget(a, this.spectating, 1);
+        if (input.wasPressed('KeyF')) {
+          if (!this.specFree) this.specPos.copy(this.camera.position);
+          this.specFree = !this.specFree;
+        }
         this.specYaw -= input.mouseDX * 0.0035;
         this.specPitch = clamp(this.specPitch - input.mouseDY * 0.0035, -1.1, 0.65);
-        if (input.down('KeyA')) this.specYaw += dt * 1.5;
-        if (input.down('KeyD')) this.specYaw -= dt * 1.5;
-        if (input.down('KeyW')) this.specDistance = Math.max(2, this.specDistance - dt * 5);
-        if (input.down('KeyS')) this.specDistance = Math.min(18, this.specDistance + dt * 5);
-      }
+        if (this.specFree) {
+          const fwd = (input.down('KeyW') ? 1 : 0) - (input.down('KeyS') ? 1 : 0);
+          const str = (input.down('KeyD') ? 1 : 0) - (input.down('KeyA') ? 1 : 0);
+          const up = (input.down('Space') ? 1 : 0) - (input.down('ControlLeft') || input.down('ControlRight') ? 1 : 0);
+          const cp = Math.cos(this.specPitch);
+          _f.set(-Math.sin(this.specYaw) * cp, Math.sin(this.specPitch), -Math.cos(this.specYaw) * cp);
+          _r.set(Math.cos(this.specYaw), 0, -Math.sin(this.specYaw));
+          const speed = (input.down('ShiftLeft') || input.down('ShiftRight') ? 26 : 10) * dt;
+          this.specPos.addScaledVector(_f, fwd * speed).addScaledVector(_r, str * speed);
+          this.specPos.y += up * speed;
+          const edge = CONFIG.map.size / 2 - 2;
+          this.specPos.x = clamp(this.specPos.x, -edge, edge);
+          this.specPos.z = clamp(this.specPos.z, -edge, edge);
+          this.specPos.y = Math.max(this.game.terrain.height(this.specPos.x, this.specPos.z) + 0.4, Math.min(80, this.specPos.y));
+        } else {
+          if (input.down('KeyA')) this.specYaw += dt * 1.5;
+          if (input.down('KeyD')) this.specYaw -= dt * 1.5;
+          if (input.down('KeyW')) this.specDistance = Math.max(2, this.specDistance - dt * 5);
+          if (input.down('KeyS')) this.specDistance = Math.min(18, this.specDistance + dt * 5);
+        }
+      } else this.specReady = false;
     }
   }
 
@@ -147,8 +180,16 @@ export class Player {
       cam.rotateZ(ease * 0.7 * (a.deathDir > 0 ? 1 : -1));
       return;
     }
+    if (!a.alive && a.deathTime >= 1.8 && this.specFree) {
+      const cp = Math.cos(this.specPitch);
+      _f.set(-Math.sin(this.specYaw) * cp, Math.sin(this.specPitch), -Math.cos(this.specYaw) * cp);
+      cam.position.copy(this.specPos);
+      _t.copy(cam.position).add(_f);
+      cam.lookAt(_t);
+      return;
+    }
     if (!a.alive) {
-      // spectate: slowly orbit a living teammate (or our corpse)
+      // spectate: orbit a living teammate, or follow the free camera
       subject = this.spectating && this.spectating.alive ? this.spectating : a;
       yaw = this.specYaw;
       pitch = this.specPitch;
