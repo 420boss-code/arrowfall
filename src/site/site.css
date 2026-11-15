@@ -156,3 +156,15 @@ body { margin: 0; background: #f6f7fb; }
 }
 #site .nw-login-card .nw-remember input { width: auto; margin: 0; padding: 0; }
 #site .nw-why { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+
+#site .nw-quiz-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 14px 0 18px; }
+#site .nw-quiz-status { color: var(--muted); font-size: 14px; font-weight: 600; margin-left: auto; }
+#site .nw-hint-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+#site .nw-hint-row p { margin: 0; color: var(--muted); background: #f3f5fa; border-radius: 8px; padding: 8px 12px; }
+#site #nwNext { min-height: 42px; }
+#site #nwCheck:disabled, #site #nwNext:disabled { opacity: .55; cursor: default; }
+@media (max-width: 600px) {
+  #site .nw-quiz-status { flex-basis: 100%; margin-left: 0; }
+  #site .nw-q { font-size: 21px; }
+  #site #nwAnswer { width: 92px; }
+}
