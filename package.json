@@ -9,7 +9,8 @@
     "start": "node server/index.js",
     "serve": "vite build && node server/index.js",
     "preview": "vite preview",
-    "meshy": "node scripts/meshy-trees.mjs"
+    "meshy": "node scripts/meshy-trees.mjs",
+    "build:static": "VITE_OFFLINE=1 vite build && node scripts/zip-static.mjs"
   },
   "dependencies": {
     "three": "^0.187.0",

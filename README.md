@@ -62,7 +62,30 @@ Options: `--only pine,broadleaf,bush`, `--variants 2` (default: 2 of each kind, 
 
 Thousands of trees are drawn at once, so these limits matter; they're in `config.js` under `forest`. Check Meshy's terms for how you may use and must credit the models.
 
-## Player codes, admin panel and factions
+## Hosting it on more sites
+
+There are two editions, and both are built from this repository.
+
+### Full online edition (any host that runs a Dockerfile)
+
+The `Dockerfile` packs everything: the maths site, sign-in, servers, parties, friends and the marketplace. It works on any host that builds from a Dockerfile, for example Koyeb, Northflank, Fly.io, Railway, Render or SnapDeploy. On the host:
+1. Create a new web service from this GitHub repository and choose **Dockerfile** as the build method.
+2. Set the environment variables `ADMIN_PASSWORD` and `CODE_SECRET`. Use the **same** `CODE_SECRET` as your other copies and every player code works on all of them.
+3. The port is whatever the host sets in `PORT` (8080 otherwise). The container already sets `TRUST_PROXY=1`, which is right behind these hosts' proxies.
+
+Each copy is its own server: players on one site don't see the rooms on another. Free plans change often. Check each host's pricing page, since some ask for a card even on free tiers, and most put idle free services to sleep.
+
+### Offline edition (any static host)
+
+```bash
+npm run build:static
+```
+
+This makes `dist-static/` and `arrowfall-offline.zip`. It needs no server. Typing 1+1 opens the game straight away, with play against bots, the marketplace and settings. Online play, friends, sign-in and the admin panel are hidden, because they need the server. All paths are relative, so it runs from any folder:
+- **itch.io:** make a new project, choose **HTML** as the kind, upload `arrowfall-offline.zip`, and tick "This file will be played in the browser".
+- **Netlify Drop**, **Cloudflare Pages**, **Vercel**, **GitHub Pages** or **Neocities:** upload the contents of `dist-static/` (or the zip, where the site accepts one).
+
+
 
 The maths page is public. Typing **1+1** asks for a code, and the server sends nothing else (the game itself, the tree models, the server list and multiplayer) without a login.
 

@@ -11,8 +11,12 @@ const $ = (id) => document.getElementById(id);
 const SECRET = /^1\+1=?$/;
 let unlocked = false;
 
+// The offline edition has no server: 1+1 opens the game straight away, for offline play.
+const OFFLINE = import.meta.env.VITE_OFFLINE === '1';
+
 async function openGame() {
   if (unlocked) return;
+  if (OFFLINE) { launch({ role: 'offline', player: null, offline: true, factions: [] }); return; }
   // the game is members-only: check for a login session first
   let session = null;
   try {

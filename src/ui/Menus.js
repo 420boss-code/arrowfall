@@ -131,6 +131,12 @@ export class Menus {
 
   _applySession() {
     const s = this.session;
+    if (s && s.offline) {
+      // offline edition: no server, so no online play, friends, sign-out or admin
+      for (const id of ['btnOnline', 'btnFriends', 'btnPauseFriends', 'btnLogout', 'btnAdmin', 'btnPauseAdmin']) $(id).classList.add('hidden');
+      $('whoami').textContent = 'Offline edition – battle the bots';
+      return;
+    }
     const admin = s && s.role === 'admin';
     $('btnAdmin').classList.toggle('hidden', !admin);
     $('btnPauseAdmin').classList.toggle('hidden', !admin);
